@@ -27,12 +27,6 @@ bool Renderer::Init(IUnknown* panelUnknown, int width, int height) {
         CreateRTV();                   // 3. RenderTargetView heap
         CreateDSV();
 
-        D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-        srvHeapDesc.NumDescriptors = 1; // 目前只用 1 張貼圖
-        srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE; // 非常重要，這樣 Shader 才看得到
-        CHECK(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
-
         // 4. CommandAllocator + CommandList
         for (UINT i = 0; i < FRAME_COUNT; i++) {
             CHECK(m_device->CreateCommandAllocator(
@@ -181,19 +175,34 @@ void Renderer::RenderFrame() {
         m_cmdList->SetPipelineState(m_pso.Get());
         m_cmdList->SetGraphicsRootSignature(m_rootSig.Get());
 
-        // 綁定含有貼圖的 SRV Heap
-        ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
-        m_cmdList->SetDescriptorHeaps(1, heaps);
-        // 告訴 Shader：貼圖資源表 (Root Parameter index 1) 在哪裡
-        m_cmdList->SetGraphicsRootDescriptorTable(1, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
-
         m_cmdList->SetGraphicsRootConstantBufferView(0, m_cbuffer->GetGPUVirtualAddress());
         m_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_cmdList->IASetVertexBuffers(0, 1, &m_mesh->vbView);
         m_cmdList->IASetIndexBuffer(&m_mesh->ibView);
 
-        for (auto& sub : m_mesh->subMeshes)
+        // 綁定包含所有貼圖的 SRV Heap
+        ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
+        m_cmdList->SetDescriptorHeaps(1, heaps);
+
+        // 迴圈遍歷所有子網格，分批 Draw Call！
+        for (const auto& sub : m_mesh->subMeshes) {
+
+            // 防呆：確保材質索引合法
+            int matIdx = sub.materialIndex;
+            if (matIdx < 0 || matIdx >= m_mesh->texturePaths.size()) matIdx = 0;
+
+            // 1. 計算這張貼圖在 Descriptor Heap 中的位移量
+            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(
+                m_srvHeap->GetGPUDescriptorHandleForHeapStart(),
+                matIdx,
+                m_srvDescriptorSize);
+
+            // 2. 告訴 Shader：「接下來要畫的東西，請用這個位置的貼圖」 (Root Parameter Index 1 對應 t0)
+            m_cmdList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
+
+            // 3. 繪製這個子網格
             m_cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
+        }
     }
 
     // Barrier: RenderTarget → Present
@@ -402,6 +411,89 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh) {
     // Views
     mesh->vbView = { mesh->vertexBuffer->GetGPUVirtualAddress(), (UINT)vbSize, sizeof(Vertex) };
     mesh->ibView = { mesh->indexBuffer->GetGPUVirtualAddress(), (UINT)ibSize, DXGI_FORMAT_R32_UINT };
+
+    // 取得 SRV Descriptor 的大小 (DX12 規定必須動態查詢)
+    m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    // 根據材質數量重建 SRV Heap (最少給 1 個避免崩潰)
+    UINT numMaterials = (std::max)(1, (int)mesh->texturePaths.size());
+    D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+    srvHeapDesc.NumDescriptors = numMaterials;
+    srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    CHECK(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
+
+    m_textures.clear();
+    m_textures.resize(numMaterials);
+    std::vector<ComPtr<ID3D12Resource>> uploadBuffers(numMaterials); // 暫存的搬運車
+
+    // 準備錄製指令
+    m_cmdAllocators[0]->Reset();
+    m_cmdList->Reset(m_cmdAllocators[0].Get(), nullptr);
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(m_srvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    // 迴圈處理每一張貼圖
+    for (size_t i = 0; i < mesh->texturePaths.size(); i++) {
+        int texW = 1, texH = 1, texChannels = 4;
+        stbi_uc* pixels = nullptr;
+        uint32_t defaultWhite = 0xFFFFFFFF; // 預設白圖 (如果模型沒貼圖)
+
+        if (!mesh->texturePaths[i].empty()) {
+            pixels = stbi_load(mesh->texturePaths[i].c_str(), &texW, &texH, &texChannels, 4);
+        }
+
+        if (!pixels) {
+            pixels = (stbi_uc*)&defaultWhite; // 防呆：給它 1x1 像素的白圖
+        }
+
+        // 建立 GPU Texture2D
+        auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, texW, texH);
+        auto defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        m_device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &texDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_textures[i]));
+
+        // 建立 Upload Buffer
+        UINT64 uploadSize;
+        m_device->GetCopyableFootprints(&texDesc, 0, 1, 0, nullptr, nullptr, nullptr, &uploadSize);
+        auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
+        m_device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadBuffers[i]));
+
+        // 複製像素資料
+        D3D12_SUBRESOURCE_DATA texData = {};
+        texData.pData = pixels;
+        texData.RowPitch = texW * 4;
+        texData.SlicePitch = texData.RowPitch * texH;
+        UpdateSubresources(m_cmdList.Get(), m_textures[i].Get(), uploadBuffers[i].Get(), 0, 0, 1, &texData);
+
+        // 轉為 Shader 資源
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_textures[i].Get(),
+            D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        m_cmdList->ResourceBarrier(1, &barrier);
+
+        // 建立 SRV 到 Heap 的對應位置
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvViewDesc = {};
+        srvViewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvViewDesc.Format = texDesc.Format;
+        srvViewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvViewDesc.Texture2D.MipLevels = 1;
+        m_device->CreateShaderResourceView(m_textures[i].Get(), &srvViewDesc, srvHandle);
+
+        // 指標往下移動到下一個空位
+        srvHandle.Offset(1, m_srvDescriptorSize);
+
+        if (pixels != (stbi_uc*)&defaultWhite) {
+            stbi_image_free(pixels); // 釋放 CPU 記憶體
+        }
+    }
+
+    // 送出所有搬運指令
+    m_cmdList->Close();
+    ID3D12CommandList* cmds[] = { m_cmdList.Get() };
+    m_cmdQueue->ExecuteCommandLists(1, cmds);
+    WaitForGpu(); // 等待所有貼圖上傳完畢 (離開函式後 uploadBuffers 會自動銷毀)
 }
 
 void Renderer::CreateDSV() {
@@ -427,66 +519,4 @@ void Renderer::CreateDSV() {
         &optClear, IID_PPV_ARGS(&m_depthStencil)));
 
     m_device->CreateDepthStencilView(m_depthStencil.Get(), nullptr, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
-}
-
-void Renderer::LoadTexture(const std::string& path) {
-    std::lock_guard<std::mutex> lock(m_renderMutex);
-
-    // 1. 使用 stb_image 讀取圖片檔案，強制轉為 4 通道 (RGBA)
-    int texW, texH, texChannels;
-    stbi_uc* pixels = stbi_load(path.c_str(), &texW, &texH, &texChannels, 4);
-    if (!pixels) {
-        OutputDebugStringA(("LoadTexture failed: " + path + "\n").c_str());
-        return; // ← 這裡 return 導致 SRV 空白
-    }
-    OutputDebugStringA("Load Texture Success");
-
-    // 2. 在 GPU 建立真實的 Texture2D 資源
-    auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, texW, texH);
-    auto defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    CHECK(m_device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &texDesc,
-        D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_texture)));
-
-    // 3. 建立 Upload Heap (CPU → GPU 的快遞車)
-    UINT64 uploadBufferSize;
-    m_device->GetCopyableFootprints(&texDesc, 0, 1, 0, nullptr, nullptr, nullptr, &uploadBufferSize);
-    auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
-    CHECK(m_device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_textureUpload)));
-
-    // 4. 將像素資料複製到 Upload Heap
-    D3D12_SUBRESOURCE_DATA textureData = {};
-    textureData.pData = pixels;
-    textureData.RowPitch = texW * 4;
-    textureData.SlicePitch = textureData.RowPitch * texH;
-
-    // 5. 錄製 Command List 進行搬運
-    WaitForGpu(); // 確保先前的指令都跑完了
-    m_cmdAllocators[0]->Reset();
-    m_cmdList->Reset(m_cmdAllocators[0].Get(), nullptr);
-
-    // 呼叫 d3dx12.h 提供的輔助函式將資料搬進 Texture
-    UpdateSubresources(m_cmdList.Get(), m_texture.Get(), m_textureUpload.Get(), 0, 0, 1, &textureData);
-
-    // 狀態轉換：Copy Dest → Shader Resource
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_texture.Get(),
-        D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    m_cmdList->ResourceBarrier(1, &barrier);
-
-    m_cmdList->Close();
-    ID3D12CommandList* cmds[] = { m_cmdList.Get() };
-    m_cmdQueue->ExecuteCommandLists(1, cmds);
-    WaitForGpu(); // 等待搬運完成
-
-    stbi_image_free(pixels); // 釋放 CPU 記憶體
-    m_textureUpload.Reset(); // 明確釋放 upload heap
-
-    // 6. 建立 SRV 描述符，放進 Heap 裡
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = texDesc.Format;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
-    m_device->CreateShaderResourceView(m_texture.Get(), &srvDesc, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
 }

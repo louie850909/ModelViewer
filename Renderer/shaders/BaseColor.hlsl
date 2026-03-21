@@ -49,5 +49,5 @@ float4 PSMain(VSOut v) : SV_TARGET
     // 4. 混合輸出 (避免純黑)
     float3 finalColor = texColor.rgb * (ndotl + ambient);
     
-    return float4(finalColor, 1.0f); // 忽略貼圖
+    return float4(finalColor, texColor.a); // 忽略貼圖
 }

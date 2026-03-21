@@ -21,7 +21,6 @@ public:
     void RenderFrame();
     void Shutdown();
     void UploadMeshToGpu(std::shared_ptr<Mesh> mesh); // ← 供 exports.cpp 呼叫
-    void LoadTexture(const std::string& path);
     void SetCameraTransform(float px, float py, float pz, float pitch, float yaw);
 
 private:
@@ -66,7 +65,8 @@ private:
 
     // SRV (Shader Resource View) 相關資源 ...
     ComPtr<ID3D12DescriptorHeap> m_srvHeap;
-    ComPtr<ID3D12Resource>       m_texture;
+    UINT m_srvDescriptorSize = 0;                   // 記錄 SRV 在 Heap 中的步長
+    std::vector<ComPtr<ID3D12Resource>> m_textures; // 存放所有載入的貼圖
     ComPtr<ID3D12Resource>       m_textureUpload; // 負責將圖片資料從 CPU 搬運到 GPU 的中繼站
 
     // --- 網格 ---

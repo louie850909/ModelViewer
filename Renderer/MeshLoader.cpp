@@ -38,12 +38,28 @@ std::shared_ptr<Mesh> MeshLoader::LoadViaAssimp(const std::string& path) {
     if (!scene || !scene->HasMeshes()) return nullptr;
 
     auto mesh = std::make_shared<Mesh>();
+    std::string baseDir = std::filesystem::path(path).parent_path().string() + "/";
+
+    // 遍歷 Assimp 的材質陣列
+    for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
+        aiMaterial* mat = scene->mMaterials[i];
+        aiString texPath;
+        // 嘗試取得 Diffuse (BaseColor) 貼圖
+        if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
+            mesh->texturePaths.push_back(baseDir + texPath.C_Str());
+        }
+        else {
+            mesh->texturePaths.push_back("");
+        }
+    }
 
     for (unsigned int m = 0; m < scene->mNumMeshes; m++) {
         aiMesh* aiM = scene->mMeshes[m];
         SubMesh sub;
         sub.indexOffset = (UINT)mesh->indices.size();
         sub.indexCount = aiM->mNumFaces * 3;
+        //記錄這個 aiMesh 使用哪個材質
+        sub.materialIndex = aiM->mMaterialIndex;
 
         // 紀錄這個 aiMesh 在全局頂點陣列中的起始位置
         UINT vertexOffset = (UINT)mesh->vertices.size();
@@ -82,6 +98,21 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
     if (!ok) return nullptr;
 
     auto mesh = std::make_shared<Mesh>();
+
+    // 取得模型所在的資料夾路徑 (用來組合貼圖絕對路徑)
+    std::string baseDir = std::filesystem::path(path).parent_path().string() + "/";
+
+    // 遍歷 glTF 的材質陣列
+    for (const auto& mat : model.materials) {
+        std::string texPath = "";
+        // 檢查是否有 BaseColor 貼圖
+        if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+            int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
+            int imgIdx = model.textures[texIdx].source;
+            texPath = baseDir + model.images[imgIdx].uri;
+        }
+        mesh->texturePaths.push_back(texPath); // 就算沒有貼圖也塞入空字串佔位
+    }
 
     // 在迴圈外定義一個輔助函式，用來安全取得 Byte Stride
     auto GetStride = [](const tinygltf::Accessor& acc, const tinygltf::BufferView& view) -> size_t {
@@ -148,6 +179,9 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
             // 處理 Indices 時，確保每個 Index 都加上 vertexOffset
             SubMesh sub;
             sub.indexOffset = (UINT)mesh->indices.size(); // 記錄這個子網格的起始 Index
+
+            // 記錄這個子網格使用哪個材質
+            sub.materialIndex = prim.material;
 
             auto& idxAcc = model.accessors[prim.indices];
             auto& idxView = model.bufferViews[idxAcc.bufferView];
