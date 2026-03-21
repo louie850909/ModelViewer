@@ -85,15 +85,19 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <MultiProcFXC>true</MultiProcFXC>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <MultiProcFXC>true</MultiProcFXC>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <MultiProcFXC>true</MultiProcFXC>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <MultiProcFXC>true</MultiProcFXC>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -104,12 +108,37 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
     </Link>
+    <FxCompile>
+      <ShaderModel>6.0</ShaderModel>
+    </FxCompile>
+    <CustomBuild>
+      <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+    </CustomBuild>
+    <CustomBuild>
+      <Message>Performing Custom HLSL Build Tools</Message>
+    </CustomBuild>
+    <CustomBuild>
+      <Outputs>$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso;$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso</Outputs>
+    </CustomBuild>
+    <PostBuildEvent>
+      <Command>rem 1. 確保目標資料夾存在 (對應 C# 專案的 bin 路徑)
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 2. 複製 C++ 產出的 Renderer.dll 以及 vcpkg 自動拉進來的所有依賴 DLL
+xcopy /Y /D "$(TargetDir)*.dll" "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 3. 確保 Shader 目錄存在，並複製所有編譯好的 .cso 檔案
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"
+xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -122,12 +151,37 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
     </Link>
+    <FxCompile>
+      <ShaderModel>6.0</ShaderModel>
+    </FxCompile>
+    <CustomBuild>
+      <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+    </CustomBuild>
+    <CustomBuild>
+      <Message>Performing Custom HLSL Build Tools</Message>
+    </CustomBuild>
+    <CustomBuild>
+      <Outputs>$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso;$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso</Outputs>
+    </CustomBuild>
+    <PostBuildEvent>
+      <Command>rem 1. 確保目標資料夾存在 (對應 C# 專案的 bin 路徑)
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 2. 複製 C++ 產出的 Renderer.dll 以及 vcpkg 自動拉進來的所有依賴 DLL
+xcopy /Y /D "$(TargetDir)*.dll" "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 3. 確保 Shader 目錄存在，並複製所有編譯好的 .cso 檔案
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"
+xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -139,12 +193,37 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
     </Link>
+    <FxCompile>
+      <ShaderModel>6.0</ShaderModel>
+    </FxCompile>
+    <CustomBuild>
+      <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+    </CustomBuild>
+    <CustomBuild>
+      <Message>Performing Custom HLSL Build Tools</Message>
+    </CustomBuild>
+    <CustomBuild>
+      <Outputs>$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso;$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso</Outputs>
+    </CustomBuild>
+    <PostBuildEvent>
+      <Command>rem 1. 確保目標資料夾存在 (對應 C# 專案的 bin 路徑)
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 2. 複製 C++ 產出的 Renderer.dll 以及 vcpkg 自動拉進來的所有依賴 DLL
+xcopy /Y /D "$(TargetDir)*.dll" "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 3. 確保 Shader 目錄存在，並複製所有編譯好的 .cso 檔案
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"
+xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -158,20 +237,48 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
     </Link>
+    <FxCompile>
+      <ShaderModel>6.0</ShaderModel>
+    </FxCompile>
+    <CustomBuild>
+      <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+    </CustomBuild>
+    <CustomBuild>
+      <Message>Performing Custom HLSL Build Tools</Message>
+    </CustomBuild>
+    <CustomBuild>
+      <Outputs>$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso;$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso</Outputs>
+    </CustomBuild>
+    <PostBuildEvent>
+      <Command>rem 1. 確保目標資料夾存在 (對應 C# 專案的 bin 路徑)
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 2. 複製 C++ 產出的 Renderer.dll 以及 vcpkg 自動拉進來的所有依賴 DLL
+xcopy /Y /D "$(TargetDir)*.dll" "$(SolutionDir)bin\$(Platform)\$(Configuration)\"
+
+rem 3. 確保 Shader 目錄存在，並複製所有編譯好的 .cso 檔案
+if not exist "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\" mkdir "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"
+xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(Configuration)\shaders\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />
+    <ClInclude Include="Mesh.h" />
+    <ClInclude Include="MeshLoader.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Renderer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="export.cpp" />
+    <ClCompile Include="MeshLoader.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -182,6 +289,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\BaseColor.hlsl">
+      <FileType>Document</FileType>
+    </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

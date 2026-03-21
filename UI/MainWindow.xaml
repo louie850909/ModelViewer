@@ -7,7 +7,11 @@
         <SwapChainPanel x:Name="RenderPanel"
                         Loaded="RenderPanel_Loaded"
                         SizeChanged="RenderPanel_SizeChanged"
-                        Unloaded="RenderPanel_Unloaded"/>
+                        Unloaded="RenderPanel_Unloaded"
+                        PointerPressed="RenderPanel_PointerPressed"
+                        PointerMoved="RenderPanel_PointerMoved"
+                        PointerReleased="RenderPanel_PointerReleased"
+                        PointerWheelChanged="RenderPanel_PointerWheelChanged"/>
 
         <!-- UI 覆蓋層（之後加工具列等） -->
         <TextBlock Text="DX12 Ready ✓"
@@ -17,5 +21,8 @@
                    HorizontalAlignment="Left"
                    FontSize="14"
                    x:Name="StatusText"/>
+        <Button Content="開啟模型" Click="OpenModel_Click"
+        VerticalAlignment="Top" HorizontalAlignment="Right"
+        Margin="16" />
     </Grid>
 </Window>

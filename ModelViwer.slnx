@@ -4,7 +4,7 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Renderer/Renderer.vcxproj">
+  <Project Path="Renderer/Renderer.vcxproj" Id="156e61f1-cdbd-45ac-8372-6569e10992bd">
     <Platform Solution="*|ARM64" Project="x64" />
   </Project>
   <Project Path="UI/UI.csproj">

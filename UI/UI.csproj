@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+	<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <OutputType>WinExe</OutputType>
 	  <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
@@ -60,10 +61,16 @@
   </PropertyGroup>
 
 	<ItemGroup>
-		<Content Include="$(SolutionDir)bin\x64\$(Configuration)\Renderer.dll" Condition="Exists('$(SolutionDir)bin\x64\$(Configuration)\Renderer.dll')">
+		<Content Include="$(SolutionDir)bin\x64\$(Configuration)\*.dll"
+				 Exclude="$(SolutionDir)bin\x64\$(Configuration)\Microsoft.*.dll;$(SolutionDir)bin\x64\$(Configuration)\WinRT*.dll;$(SolutionDir)bin\x64\$(Configuration)\System.*.dll">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<DeploymentContent>true</DeploymentContent>
-			<!-- Packaged App 部署時帶入 -->
+		</Content>
+
+		<Content Include="$(SolutionDir)bin\x64\$(Configuration)\shaders\**\*.cso">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<DeploymentContent>true</DeploymentContent>
+			<Link>shaders\%(RecursiveDir)%(Filename)%(Extension)</Link>
 		</Content>
 	</ItemGroup>
 </Project>
