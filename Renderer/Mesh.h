@@ -22,6 +22,7 @@ struct Mesh {
     std::vector<SubMesh>  subMeshes;
     // 記錄解析出來的貼圖絕對路徑 (索引對應 materialIndex)
     std::vector<std::string> texturePaths;
+    std::vector<std::string> metallicRoughnessPaths;
 
     // GPU 資源
     ComPtr<ID3D12Resource> vertexBuffer;

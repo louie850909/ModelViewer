@@ -8,8 +8,10 @@
 struct SceneConstants {
     DirectX::XMFLOAT4X4 mvp;
     DirectX::XMFLOAT4X4 normalMatrix;
+    DirectX::XMFLOAT3   cameraPos;
+	float			    _pad1; // 填充對齊 (cbuffer 中的 float3 會自動對齊到 16 bytes，所以這裡補一個 float 當作填充)
     DirectX::XMFLOAT3   lightDir;
-    float               _pad;
+    float               _pad2;
     DirectX::XMFLOAT4   baseColor;
 };
 

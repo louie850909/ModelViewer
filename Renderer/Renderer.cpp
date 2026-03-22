@@ -163,6 +163,7 @@ void Renderer::RenderFrame() {
             XMMatrixTranspose(XMMatrixInverse(nullptr, model)));
 
         cb.baseColor = { 0.8f, 0.6f, 0.4f, 1.0f };
+		cb.cameraPos = m_cameraPos; // 提供攝影機位置給 Shader，讓它能計算出鏡面反射等效果
         memcpy(m_cbufferData, &cb, sizeof(cb));
 
         // 設定 Viewport & Scissor
@@ -193,7 +194,8 @@ void Renderer::RenderFrame() {
             int matIdx = sub.materialIndex;
             if (matIdx < 0 || matIdx >= m_mesh->texturePaths.size()) matIdx = 0;
 
-            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx, m_srvDescriptorSize);
+			// 每個 SubMesh 的材質貼圖在 SRV Heap 中佔 2 個位置 (BaseColor + Normal)，所以要乘以 2
+            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, m_srvDescriptorSize);
             m_cmdList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
             m_cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
         }
@@ -209,7 +211,8 @@ void Renderer::RenderFrame() {
             int matIdx = sub.materialIndex;
             if (matIdx < 0 || matIdx >= m_mesh->texturePaths.size()) matIdx = 0;
 
-            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx, m_srvDescriptorSize);
+			// 注意：這裡的 matIdx 是整個 Mesh 的材質索引，並不是 SubMesh 的索引！SubMesh 只是指向 Mesh 的材質陣列裡的某一個位置
+            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, m_srvDescriptorSize);
             m_cmdList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
             m_cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
         }
@@ -294,7 +297,7 @@ void Renderer::CreateRootSignatureAndPSO() {
     // --- 建立 Root Signature ---
     // 1. 定義貼圖的位置 (t0)
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
 
     // 2. 設定 Root Parameters (0 是 MVP 矩陣，1 是貼圖陣列)
     CD3DX12_ROOT_PARAMETER1 rootParameters[2];
@@ -451,39 +454,27 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh) {
     // 取得 SRV Descriptor 的大小 (DX12 規定必須動態查詢)
     m_srvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    // 根據材質數量重建 SRV Heap (最少給 1 個避免崩潰)
+    // 👇 Heap 數量加倍 (每個材質 2 張圖：t0=BaseColor, t1=MR)
     UINT numMaterials = (std::max)(1, (int)mesh->texturePaths.size());
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = numMaterials;
+    srvHeapDesc.NumDescriptors = numMaterials * 2;
     srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     CHECK(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
 
     m_textures.clear();
-    m_textures.resize(numMaterials);
-    std::vector<ComPtr<ID3D12Resource>> uploadBuffers(numMaterials); // 暫存的搬運車
+    std::vector<ComPtr<ID3D12Resource>> uploadBuffers; // 暫存區
 
-    // 準備錄製指令
     m_cmdAllocators[0]->Reset();
     m_cmdList->Reset(m_cmdAllocators[0].Get(), nullptr);
-
     CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(m_srvHeap->GetCPUDescriptorHandleForHeapStart());
 
-    // 迴圈處理每一張貼圖
-    for (size_t i = 0; i < mesh->texturePaths.size(); i++) {
+    // 定義一個 Lambda 輔助函式，專門處理「讀取、產 Mipmap、建 SRV」
+    auto LoadTextureToGPU = [&](const std::string& path, uint32_t defaultColor) {
         int texW = 1, texH = 1, texChannels = 4;
-        stbi_uc* pixels = nullptr;
-        uint32_t defaultWhite = 0xFFFFFFFF; // 預設白圖 (如果模型沒貼圖)
+        stbi_uc* pixels = path.empty() ? nullptr : stbi_load(path.c_str(), &texW, &texH, &texChannels, 4);
+        if (!pixels) pixels = (stbi_uc*)&defaultColor;
 
-        if (!mesh->texturePaths[i].empty()) {
-            pixels = stbi_load(mesh->texturePaths[i].c_str(), &texW, &texH, &texChannels, 4);
-        }
-
-        if (!pixels) {
-            pixels = (stbi_uc*)&defaultWhite; // 防呆：給它 1x1 像素的白圖
-        }
-
-        // 計算這張貼圖需要幾層 Mipmap (不斷除以 2 直到 1x1)
         UINT mipLevels = 1;
         UINT tempW = texW, tempH = texH;
         while (tempW > 1 || tempH > 1) {
@@ -492,48 +483,46 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh) {
             tempH = (std::max)(1u, tempH / 2);
         }
 
-        // 建立 GPU Texture2D (將 MipLevels 從 1 改為我們算出的層數)
+        // push new entries
+        m_textures.emplace_back();
+        uploadBuffers.emplace_back();
+
+        // GPU テクスチャ作成
         auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, texW, texH, 1, (UINT16)mipLevels);
         auto defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        m_device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &texDesc,
-            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_textures[i]));
+        CHECK(m_device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &texDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_textures.back())));
 
-        // 建立 Upload Buffer (要能裝得下所有 Mipmap 層級)
-        UINT64 uploadSize;
+        // Upload Buffer 作成
+        UINT64 uploadSize = 0;
         m_device->GetCopyableFootprints(&texDesc, 0, mipLevels, 0, nullptr, nullptr, nullptr, &uploadSize);
         auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
         auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
-        m_device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &bufferDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadBuffers[i]));
+        CHECK(m_device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadBuffers.back())));
 
-        // 在 CPU 端動態計算並產生每一層的 Mipmap 像素資料
+        // CPU 側で MIP を生成して subresources を用意
         std::vector<std::vector<uint8_t>> mipData(mipLevels);
         std::vector<D3D12_SUBRESOURCE_DATA> subresources(mipLevels);
-
-        // 第 0 層 (原始最高畫質)
         mipData[0].assign(pixels, pixels + (texW * texH * 4));
         subresources[0].pData = mipData[0].data();
         subresources[0].RowPitch = texW * 4;
         subresources[0].SlicePitch = subresources[0].RowPitch * texH;
 
-        // 第 1 ~ N 層 (透過 2x2 Box Filter 模糊降採樣)
         UINT currW = texW, currH = texH;
-        for (UINT m = 1; m < mipLevels; m++) {
-            UINT prevW = currW; UINT prevH = currH;
+        for (UINT m = 1; m < mipLevels; ++m) {
+            UINT prevW = currW, prevH = currH;
             currW = (std::max)(1u, currW / 2);
             currH = (std::max)(1u, currH / 2);
-
             mipData[m].resize(currW * currH * 4);
             const uint8_t* src = mipData[m - 1].data();
             uint8_t* dst = mipData[m].data();
-
-            for (UINT y = 0; y < currH; y++) {
-                for (UINT x = 0; x < currW; x++) {
-                    UINT sx = x * 2; UINT sy = y * 2;
+            for (UINT y = 0; y < currH; ++y) {
+                for (UINT x = 0; x < currW; ++x) {
+                    UINT sx = x * 2, sy = y * 2;
                     UINT sx1 = (std::min)(sx + 1, prevW - 1);
                     UINT sy1 = (std::min)(sy + 1, prevH - 1);
-
-                    for (int c = 0; c < 4; c++) { // RGBA 通道混合
+                    for (int c = 0; c < 4; ++c) {
                         int p00 = src[(sy * prevW + sx) * 4 + c];
                         int p10 = src[(sy * prevW + sx1) * 4 + c];
                         int p01 = src[(sy1 * prevW + sx) * 4 + c];
@@ -547,28 +536,33 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh) {
             subresources[m].SlicePitch = subresources[m].RowPitch * currH;
         }
 
-        // 一口氣將所有 Mipmap 層級上傳到 GPU
-        UpdateSubresources(m_cmdList.Get(), m_textures[i].Get(), uploadBuffers[i].Get(), 0, 0, mipLevels, subresources.data());
+        // Upload 実行
+        UpdateSubresources(m_cmdList.Get(), m_textures.back().Get(), uploadBuffers.back().Get(), 0, 0, mipLevels, subresources.data());
 
-        // 轉為 Shader 資源
-        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_textures[i].Get(),
+        // 状態遷移 & SRV 作成
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_textures.back().Get(),
             D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         m_cmdList->ResourceBarrier(1, &barrier);
 
-        // 建立 SRV 到 Heap 的對應位置
         D3D12_SHADER_RESOURCE_VIEW_DESC srvViewDesc = {};
         srvViewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvViewDesc.Format = texDesc.Format;
         srvViewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         srvViewDesc.Texture2D.MipLevels = mipLevels;
-        m_device->CreateShaderResourceView(m_textures[i].Get(), &srvViewDesc, srvHandle);
-
-        // 指標往下移動到下一個空位
+        m_device->CreateShaderResourceView(m_textures.back().Get(), &srvViewDesc, srvHandle);
         srvHandle.Offset(1, m_srvDescriptorSize);
 
-        if (pixels != (stbi_uc*)&defaultWhite) {
-            stbi_image_free(pixels); // 釋放 CPU 記憶體
-        }
+        if (pixels != (stbi_uc*)&defaultColor) stbi_image_free(pixels);
+    };
+
+    // 遍歷所有材質，依序載入 t0 和 t1
+    for (size_t i = 0; i < numMaterials; i++) {
+        // 1. 載入 BaseColor (預設純白 0xFFFFFFFF)
+        LoadTextureToGPU(mesh->texturePaths[i], 0xFFFFFFFF);
+
+        // 2. 載入 MetallicRoughness (預設：金屬度 0, 粗糙度 1.0 -> 綠色通道滿)
+        // Little Endian RGBA 中，Roughness=1.0(G=255), Metallic=0.0(B=0) => 0xFF00FF00
+        LoadTextureToGPU(mesh->metallicRoughnessPaths[i], 0xFF00FF00);
     }
 
     // 送出所有搬運指令
