@@ -3,48 +3,49 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Model Viewer">
     <Grid>
-        <!-- DX12 渲染面板（最底層） -->
-        <SwapChainPanel x:Name="RenderPanel"
-                        Loaded="RenderPanel_Loaded"
-                        SizeChanged="RenderPanel_SizeChanged"
-                        Unloaded="RenderPanel_Unloaded"
-                        PointerPressed="RenderPanel_PointerPressed"
-                        PointerMoved="RenderPanel_PointerMoved"
-                        PointerReleased="RenderPanel_PointerReleased"
-                        PointerWheelChanged="RenderPanel_PointerWheelChanged"/>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
-        <!-- UI 覆蓋層（之後加工具列等） -->
-        <StackPanel VerticalAlignment="Top" HorizontalAlignment="Left" Margin="16" IsHitTestVisible="False">
-            <TextBlock Text="DX12 Ready ✓"
-                       Foreground="White"
-                       FontSize="14"
-                       x:Name="StatusText"/>
+        <Border Grid.Column="0" Background="#1E1E1E" BorderBrush="#333333" BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-            <TextBlock x:Name="StatsText"
-                       Foreground="#FF00FF00"
-                       FontSize="13"
-                       Margin="0,4,0,0"
-                       FontFamily="Consolas" />
-        </StackPanel>
-        <Button Content="開啟模型" Click="OpenModel_Click"
-                VerticalAlignment="Top" HorizontalAlignment="Right"
-                Margin="16" />
+                <TextBlock Grid.Row="0" Text="Hierarchy" Foreground="#CCCCCC" FontWeight="SemiBold" Margin="12,12,12,8" />
 
-        <Border x:Name="LoadingOverlay"
-                Background="#A0000000" 
-                Visibility="Collapsed"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch">
-
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <ProgressRing IsActive="True" Width="80" Height="80" Foreground="White"/>
-                <TextBlock Text="Loading..." 
-                           Foreground="White" 
-                           FontSize="20" 
-                           FontWeight="Bold"
-                           Margin="0,16,0,0" 
-                           HorizontalAlignment="Center"/>
-            </StackPanel>
+                <TreeView x:Name="HierarchyTree" Grid.Row="1" Background="Transparent">
+                </TreeView>
+            </Grid>
         </Border>
+
+        <Grid Grid.Column="1">
+            <SwapChainPanel x:Name="RenderPanel"
+                            Loaded="RenderPanel_Loaded"
+                            SizeChanged="RenderPanel_SizeChanged"
+                            Unloaded="RenderPanel_Unloaded"
+                            PointerPressed="RenderPanel_PointerPressed"
+                            PointerMoved="RenderPanel_PointerMoved"
+                            PointerReleased="RenderPanel_PointerReleased"
+                            PointerWheelChanged="RenderPanel_PointerWheelChanged"/>
+
+            <StackPanel VerticalAlignment="Top" HorizontalAlignment="Left" Margin="16" IsHitTestVisible="False">
+                <TextBlock Text="DX12 Ready ✓" Foreground="White" FontSize="14" x:Name="StatusText"/>
+                <TextBlock x:Name="StatsText" Foreground="#FF00FF00" FontSize="13" Margin="0,4,0,0" FontFamily="Consolas" />
+            </StackPanel>
+
+            <Button Content="開啟模型" Click="OpenModel_Click"
+                    VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16" />
+
+            <Border x:Name="LoadingOverlay" Background="#A0000000" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ProgressRing IsActive="True" Width="80" Height="80" Foreground="White"/>
+                    <TextBlock Text="Loading..." Foreground="White" FontSize="20" FontWeight="Bold" Margin="0,16,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

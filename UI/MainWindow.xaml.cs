@@ -172,7 +172,33 @@ public sealed partial class MainWindow : Window
         {
             // 關閉載入遮罩
             LoadingOverlay.Visibility = Visibility.Collapsed;
+
+            // 更新 Hierarchy 視窗
+            UpdateHierarchy();
         });
+    }
+
+    private void UpdateHierarchy()
+    {
+        HierarchyTree.RootNodes.Clear();
+
+        // 取得目前的效能數據，藉此得知有幾個 Draw Calls / SubMeshes
+        RenderBridge.Renderer_GetStats(out int v, out int p, out int dc, out float ft);
+
+        // 建立根節點 (代表整個模型)
+        var rootNode = new TreeViewNode() { Content = "Root Model", IsExpanded = true };
+
+        // 由於目前 C++ 尚未傳遞真實的 Node 結構，我們先用 SubMesh 數量來模擬子節點
+        // 這樣至少能看到模型是由幾個物件/材質組成的
+        int subMeshCount = dc; // 這裡簡化：假設 DrawCalls 大致等於 SubMesh 數量
+
+        for (int i = 0; i < subMeshCount; i++)
+        {
+            var childNode = new TreeViewNode() { Content = $"SubMesh_{i}" };
+            rootNode.Children.Add(childNode);
+        }
+
+        HierarchyTree.RootNodes.Add(rootNode);
     }
 
     // ==========================================
