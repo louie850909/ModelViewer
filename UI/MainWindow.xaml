@@ -58,19 +58,82 @@
                 <TextBox x:Name="NodeNameText" IsReadOnly="True" Background="#2D2D2D" Foreground="White" BorderThickness="0" Margin="0,0,0,16"/>
 
                 <TextBlock Text="Position (座標)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
-                <TextBox x:Name="PosXText" IsReadOnly="True" Margin="0,0,0,4"/>
-                <TextBox x:Name="PosYText" IsReadOnly="True" Margin="0,0,0,4"/>
-                <TextBox x:Name="PosZText" IsReadOnly="True" Margin="0,0,0,16"/>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="PosXText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Y:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="PosYText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Z:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="PosZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
 
-                <TextBlock Text="Rotation (旋轉 - Euler)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
-                <TextBox x:Name="RotXText" IsReadOnly="True" Margin="0,0,0,4"/>
-                <TextBox x:Name="RotYText" IsReadOnly="True" Margin="0,0,0,4"/>
-                <TextBox x:Name="RotZText" IsReadOnly="True" Margin="0,0,0,16"/>
+                <TextBlock Text="Rotation (Euler 度數)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="RotXText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Y:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="RotYText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Z:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="RotZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
 
                 <TextBlock Text="Scale (縮放)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
-                <TextBox x:Name="ScaleXText" IsReadOnly="True" Margin="0,0,0,4"/>
-                <TextBox x:Name="ScaleYText" IsReadOnly="True" Margin="0,0,0,4"/>
-                <TextBox x:Name="ScaleZText" IsReadOnly="True" />
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="ScaleXText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Y:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="ScaleYText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Z:" VerticalAlignment="Center" Foreground="#888888"/>
+                    <TextBox x:Name="ScaleZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
+                </Grid>
             </StackPanel>
         </Border>
     </Grid>

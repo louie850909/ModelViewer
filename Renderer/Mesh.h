@@ -22,6 +22,9 @@ struct SceneNode {
     float t[3] = { 0.0f, 0.0f, 0.0f };          // Translation
     float r[4] = { 0.0f, 0.0f, 0.0f, 1.0f };    // Rotation (Quaternion: x, y, z, w)
     float s[3] = { 1.0f, 1.0f, 1.0f };          // Scale
+
+    // 記錄這個節點要畫哪些子網格 (儲存 m_mesh->subMeshes 的 Index)
+    std::vector<int> subMeshIndices;
 };
 
 struct Mesh {

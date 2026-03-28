@@ -34,6 +34,8 @@ public sealed partial class MainWindow : Window
 
     // 用來記錄 TreeViewNode 對應到的 C++ 陣列索引
     private Dictionary<TreeViewNode, int> _nodeIndexMap = new();
+    private int _selectedNodeIndex = -1;
+    private bool _isUpdatingUI = false;
 
     public MainWindow()
     {
@@ -225,32 +227,62 @@ public sealed partial class MainWindow : Window
     {
         if (args.InvokedItem is TreeViewNode selectedNode && _nodeIndexMap.TryGetValue(selectedNode, out int nodeIndex))
         {
+            _selectedNodeIndex = nodeIndex;
+            _isUpdatingUI = true; // 鎖定 UI，避免觸發寫入事件
+
             NodeNameText.Text = selectedNode.Content.ToString();
 
-            float[] t = new float[3];
-            float[] r = new float[4];
-            float[] s = new float[3];
-
+            float[] t = new float[3]; float[] r = new float[4]; float[] s = new float[3];
             RenderBridge.Renderer_GetNodeTransform(nodeIndex, t, r, s);
 
-            // 更新 Position UI
-            PosXText.Text = $"X: {t[0]:F3}";
-            PosYText.Text = $"Y: {t[1]:F3}";
-            PosZText.Text = $"Z: {t[2]:F3}";
+            // 填入純數字
+            PosXText.Text = t[0].ToString("F3"); PosYText.Text = t[1].ToString("F3"); PosZText.Text = t[2].ToString("F3");
+            ScaleXText.Text = s[0].ToString("F3"); ScaleYText.Text = s[1].ToString("F3"); ScaleZText.Text = s[2].ToString("F3");
 
-            // 更新 Scale UI
-            ScaleXText.Text = $"X: {s[0]:F3}";
-            ScaleYText.Text = $"Y: {s[1]:F3}";
-            ScaleZText.Text = $"Z: {s[2]:F3}";
-
-            // 將四元數 (Quaternion) 轉換為人類易讀的尤拉角 (Euler Angles)
             var quaternion = new Quaternion(r[0], r[1], r[2], r[3]);
             var euler = QuaternionToEulerAngles(quaternion);
 
-            // 更新 Rotation UI (顯示度數)
-            RotXText.Text = $"X: {euler.X:F2}°";
-            RotYText.Text = $"Y: {euler.Y:F2}°";
-            RotZText.Text = $"Z: {euler.Z:F2}°";
+            RotXText.Text = euler.X.ToString("F3"); RotYText.Text = euler.Y.ToString("F3"); RotZText.Text = euler.Z.ToString("F3");
+
+            _isUpdatingUI = false; // 解除鎖定
+        }
+    }
+
+    private void TransformInput_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        // 按下 Enter 鍵時套用變更
+        if (e.Key == Windows.System.VirtualKey.Enter) ApplyTransformChanges();
+    }
+
+    private void TransformInput_LostFocus(object sender, RoutedEventArgs e)
+    {
+        // 滑鼠點擊其他地方時套用變更
+        ApplyTransformChanges();
+    }
+
+    private void ApplyTransformChanges()
+    {
+        if (_isUpdatingUI || _selectedNodeIndex == -1) return;
+
+        try
+        {
+            float[] t = new float[3] { float.Parse(PosXText.Text), float.Parse(PosYText.Text), float.Parse(PosZText.Text) };
+            float[] s = new float[3] { float.Parse(ScaleXText.Text), float.Parse(ScaleYText.Text), float.Parse(ScaleZText.Text) };
+
+            // 將 UI 的角度轉回弧度 (Radians)
+            float pitch = float.Parse(RotXText.Text) * (float)(Math.PI / 180.0);
+            float yaw = float.Parse(RotYText.Text) * (float)(Math.PI / 180.0);
+            float roll = float.Parse(RotZText.Text) * (float)(Math.PI / 180.0);
+
+            // 內建的歐拉角轉四元數 (Yaw, Pitch, Roll)
+            Quaternion q = Quaternion.CreateFromYawPitchRoll(yaw, pitch, roll);
+            float[] r = new float[4] { q.X, q.Y, q.Z, q.W };
+
+            RenderBridge.Renderer_SetNodeTransform(_selectedNodeIndex, t, r, s);
+        }
+        catch (FormatException)
+        {
+            // 若輸入非數字格式，直接略過不處理
         }
     }
 

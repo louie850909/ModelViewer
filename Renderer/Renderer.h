@@ -69,11 +69,9 @@ private:
     ComPtr<ID3D12RootSignature>       m_rootSig;
     ComPtr<ID3D12PipelineState>       m_psoOpaque;      // 不透明專用
     ComPtr<ID3D12PipelineState>       m_psoTransparent; // 半透明專用
-    ComPtr<ID3D12Resource>            m_cbuffer;
     // Depth Buffer 相關資源
     ComPtr<ID3D12Resource>            m_depthStencil;
     ComPtr<ID3D12DescriptorHeap>      m_dsvHeap;
-    UINT8* m_cbufferData = nullptr;
 
     // SRV (Shader Resource View) 相關資源 ...
     ComPtr<ID3D12DescriptorHeap> m_srvHeap;

@@ -147,35 +147,34 @@ void Renderer::RenderFrame() {
     if (m_mesh) {
         using namespace DirectX;
 
-        // 模型保持靜止不動
-        XMMATRIX model = XMMatrixIdentity();
+        // 1. 計算所有節點的世界矩陣 (Global Transforms)
+        std::vector<XMMATRIX> globalTransforms(m_mesh->nodes.size());
+        for (size_t i = 0; i < m_mesh->nodes.size(); ++i) {
+            const auto& node = m_mesh->nodes[i];
 
-        // 2. 計算攝影機位置
+            // Local Transform = Scale * Rotation * Translation
+            XMMATRIX local = XMMatrixScaling(node.s[0], node.s[1], node.s[2]) *
+                XMMatrixRotationQuaternion(XMVectorSet(node.r[0], node.r[1], node.r[2], node.r[3])) *
+                XMMatrixTranslation(node.t[0], node.t[1], node.t[2]);
+
+            // 如果有父節點，就乘上父節點的世界矩陣 (階層繼承)
+            if (node.parentIndex >= 0) {
+                globalTransforms[i] = local * globalTransforms[node.parentIndex];
+            }
+            else {
+                globalTransforms[i] = local;
+            }
+        }
+
+        // 2. 計算攝影機與 View Projection
         XMMATRIX rotation = XMMatrixRotationRollPitchYaw(m_pitch, m_yaw, 0.0f);
         XMVECTOR eye = XMLoadFloat3(&m_cameraPos);
         XMVECTOR forward = XMVector3TransformNormal(XMVectorSet(0, 0, 1, 0), rotation);
         XMVECTOR up = XMVectorSet(0, 1, 0, 0);
-        XMVECTOR at = eye + forward;
+        XMMATRIX view = XMMatrixLookAtLH(eye, eye + forward, up);
+        XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.f), (float)m_width / m_height, 0.1f, 5000.f);
 
-        XMMATRIX view = XMMatrixLookAtLH(eye, at, up);
-        XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.f), (float)m_width / m_height, 0.1f, 5000.f); // 順便把遠裁切面加大到 5000
-
-        // 3. 寫入 Constant Buffer
-        SceneConstants cb = {};
-        XMStoreFloat4x4(&cb.mvp, XMMatrixTranspose(model * view * proj));
-
-        // 讓光源方向跟著攝影機位置變動 (看起來會有 Headlight 礦工燈的效果)
-        XMStoreFloat3(&cb.lightDir, XMVector3Normalize(forward));
-
-		// Normal Matrix 是 Model 的逆轉置矩陣，提供給 Shader 用來正確變換法線向量
-        XMStoreFloat4x4(&cb.normalMatrix,
-            XMMatrixTranspose(XMMatrixInverse(nullptr, model)));
-
-        cb.baseColor = { 0.8f, 0.6f, 0.4f, 1.0f };
-		cb.cameraPos = m_cameraPos; // 提供攝影機位置給 Shader，讓它能計算出鏡面反射等效果
-        memcpy(m_cbufferData, &cb, sizeof(cb));
-
-        // 設定 Viewport & Scissor
+        // 3. 基本渲染設定
         D3D12_VIEWPORT vp = { 0,0,(float)m_width,(float)m_height,0,1 };
         D3D12_RECT     sc = { 0,0,m_width,m_height };
         m_cmdList->RSSetViewports(1, &vp);
@@ -183,50 +182,52 @@ void Renderer::RenderFrame() {
         m_cmdList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
         m_cmdList->SetGraphicsRootSignature(m_rootSig.Get());
 
-        m_cmdList->SetGraphicsRootConstantBufferView(0, m_cbuffer->GetGPUVirtualAddress());
         m_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_cmdList->IASetVertexBuffers(0, 1, &m_mesh->vbView);
         m_cmdList->IASetIndexBuffer(&m_mesh->ibView);
 
-        // 綁定包含所有貼圖的 SRV Heap
         ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
         m_cmdList->SetDescriptorHeaps(1, heaps);
 
-        // ==========================================
-        // Pass 1: 先畫所有「不透明」的物件
-        // ==========================================
+        // 4. 定義一個 Lambda 來處理不透明與半透明的繪製
+        auto drawPass = [&](bool drawTransparent) {
+            for (size_t n = 0; n < m_mesh->nodes.size(); ++n) {
+                const auto& node = m_mesh->nodes[n];
+                if (node.subMeshIndices.empty()) continue; // 沒東西要畫就跳過
+
+                // 組合「這個節點」專屬的 MVP 矩陣
+                SceneConstants cb = {};
+                XMStoreFloat4x4(&cb.mvp, XMMatrixTranspose(globalTransforms[n] * view * proj));
+                XMStoreFloat3(&cb.lightDir, XMVector3Normalize(forward));
+                XMStoreFloat4x4(&cb.normalMatrix, XMMatrixTranspose(XMMatrixInverse(nullptr, globalTransforms[n])));
+                cb.baseColor = { 0.8f, 0.6f, 0.4f, 1.0f };
+                cb.cameraPos = m_cameraPos;
+
+                // 使用 Root Constants 直接把 44 個 float (176 bytes) 送進 GPU 管線
+                m_cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstants) / 4, &cb, 0);
+
+                // 繪製這個節點底下的所有 SubMesh
+                for (int subIdx : node.subMeshIndices) {
+                    const auto& sub = m_mesh->subMeshes[subIdx];
+                    if (sub.isTransparent != drawTransparent) continue;
+
+                    int matIdx = sub.materialIndex;
+                    if (matIdx < 0 || matIdx >= m_mesh->texturePaths.size()) matIdx = 0;
+
+                    CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, m_srvDescriptorSize);
+                    m_cmdList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
+                    m_cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
+                    currentDrawCalls++;
+                }
+            }
+            };
+
+        // 5. 實際執行繪製
         m_cmdList->SetPipelineState(m_psoOpaque.Get());
+        drawPass(false); // 先畫不透明物件
 
-        for (const auto& sub : m_mesh->subMeshes) {
-            if (sub.isTransparent) continue; // 是透明的就跳過，晚點畫
-
-            int matIdx = sub.materialIndex;
-            if (matIdx < 0 || matIdx >= m_mesh->texturePaths.size()) matIdx = 0;
-
-			// 每個 SubMesh 的材質貼圖在 SRV Heap 中佔 2 個位置 (BaseColor + Normal)，所以要乘以 2
-            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, m_srvDescriptorSize);
-            m_cmdList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
-            m_cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
-            currentDrawCalls++; // 紀錄 DrawCall
-        }
-
-        // ==========================================
-        // Pass 2: 再畫所有「半透明」的物件
-        // ==========================================
         m_cmdList->SetPipelineState(m_psoTransparent.Get());
-
-        for (const auto& sub : m_mesh->subMeshes) {
-            if (!sub.isTransparent) continue; // 不透明的剛剛畫過了，跳過
-
-            int matIdx = sub.materialIndex;
-            if (matIdx < 0 || matIdx >= m_mesh->texturePaths.size()) matIdx = 0;
-
-			// 注意：這裡的 matIdx 是整個 Mesh 的材質索引，並不是 SubMesh 的索引！SubMesh 只是指向 Mesh 的材質陣列裡的某一個位置
-            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, m_srvDescriptorSize);
-            m_cmdList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
-            m_cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
-            currentDrawCalls++; // 紀錄 DrawCall
-        }
+        drawPass(true);  // 再畫半透明物件
 
         m_statVertices.store((int)m_mesh->vertices.size(), std::memory_order_relaxed);
         m_statPolygons.store((int)m_mesh->indices.size() / 3, std::memory_order_relaxed);
@@ -322,8 +323,9 @@ void Renderer::CreateRootSignatureAndPSO() {
 
     // 2. 設定 Root Parameters (0 是 MVP 矩陣，1 是貼圖陣列)
     CD3DX12_ROOT_PARAMETER1 rootParameters[2];
-    rootParameters[0].InitAsConstantBufferView(0); // 對應 b0
-    rootParameters[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL); // 對應 t0
+    // 44 代表 SceneConstants 結構的大小除以 4 (176 bytes / 4 = 44 個 32-bit 數值)
+    rootParameters[0].InitAsConstants(44, 0);
+    rootParameters[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
     // 3. 建立一個預設的靜態採樣器 (s0)
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_ANISOTROPIC);
@@ -403,14 +405,6 @@ void Renderer::CreateRootSignatureAndPSO() {
     psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
 
     CHECK(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_psoTransparent)));
-
-    // Constant Buffer（256 byte aligned）
-    auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    auto bufDesc = CD3DX12_RESOURCE_DESC::Buffer(256);
-    m_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
-        &bufDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr, IID_PPV_ARGS(&m_cbuffer));
-    m_cbuffer->Map(0, nullptr, reinterpret_cast<void**>(&m_cbufferData));
 }
 
 void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh) {
