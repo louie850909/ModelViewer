@@ -6,6 +6,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="250"/>
             <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="250"/>
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" Background="#1E1E1E" BorderBrush="#333333" BorderThickness="0,0,1,0">
@@ -17,7 +18,8 @@
 
                 <TextBlock Grid.Row="0" Text="Hierarchy" Foreground="#CCCCCC" FontWeight="SemiBold" Margin="12,12,12,8" />
 
-                <TreeView x:Name="HierarchyTree" Grid.Row="1" Background="Transparent">
+                <TreeView x:Name="HierarchyTree" Grid.Row="1" Background="Transparent" 
+                          ItemInvoked="HierarchyTree_ItemInvoked">
                 </TreeView>
             </Grid>
         </Border>
@@ -47,5 +49,29 @@
                 </StackPanel>
             </Border>
         </Grid>
+
+        <Border Grid.Column="2" Background="#1E1E1E" BorderBrush="#333333" BorderThickness="1,0,0,0">
+            <StackPanel Margin="12">
+                <TextBlock Text="Inspector" Foreground="#CCCCCC" FontWeight="SemiBold" Margin="0,0,0,16" />
+
+                <TextBlock Text="節點名稱" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <TextBox x:Name="NodeNameText" IsReadOnly="True" Background="#2D2D2D" Foreground="White" BorderThickness="0" Margin="0,0,0,16"/>
+
+                <TextBlock Text="Position (座標)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <TextBox x:Name="PosXText" IsReadOnly="True" Margin="0,0,0,4"/>
+                <TextBox x:Name="PosYText" IsReadOnly="True" Margin="0,0,0,4"/>
+                <TextBox x:Name="PosZText" IsReadOnly="True" Margin="0,0,0,16"/>
+
+                <TextBlock Text="Rotation (旋轉 - Euler)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <TextBox x:Name="RotXText" IsReadOnly="True" Margin="0,0,0,4"/>
+                <TextBox x:Name="RotYText" IsReadOnly="True" Margin="0,0,0,4"/>
+                <TextBox x:Name="RotZText" IsReadOnly="True" Margin="0,0,0,16"/>
+
+                <TextBlock Text="Scale (縮放)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <TextBox x:Name="ScaleXText" IsReadOnly="True" Margin="0,0,0,4"/>
+                <TextBox x:Name="ScaleYText" IsReadOnly="True" Margin="0,0,0,4"/>
+                <TextBox x:Name="ScaleZText" IsReadOnly="True" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

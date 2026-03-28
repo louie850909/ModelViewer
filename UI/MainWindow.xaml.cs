@@ -8,6 +8,7 @@ using Windows.System;
 using UI;
 using WinRT;
 using Microsoft.UI.Xaml.Media;
+using System.Collections.Generic;
 
 namespace UI;
 
@@ -30,6 +31,9 @@ public sealed partial class MainWindow : Window
 
     // [極度重要] 宣告一個類別層級的變數來抓住 Delegate，避免被 GC 回收！
     private RenderBridge.LoadCallback _loadCallback;
+
+    // 用來記錄 TreeViewNode 對應到的 C++ 陣列索引
+    private Dictionary<TreeViewNode, int> _nodeIndexMap = new();
 
     public MainWindow()
     {
@@ -181,45 +185,103 @@ public sealed partial class MainWindow : Window
     private void UpdateHierarchy()
     {
         HierarchyTree.RootNodes.Clear();
+        _nodeIndexMap.Clear(); // 清空舊的映射
 
-        // 1. 取得節點總數
         int nodeCount = RenderBridge.Renderer_GetNodeCount();
         if (nodeCount == 0) return;
 
-        // 2. 準備緩衝區與查表 (用來將子節點綁定到對應的父節點)
         byte[] nameBuffer = new byte[256];
-        var nodeMap = new System.Collections.Generic.Dictionary<int, TreeViewNode>();
+        var nodeMap = new Dictionary<int, TreeViewNode>();
 
-        // 3. 遍歷 C++ 傳來的平坦化陣列
         for (int i = 0; i < nodeCount; i++)
         {
             RenderBridge.Renderer_GetNodeInfo(i, nameBuffer, nameBuffer.Length, out int parentIndex);
-
-            // 尋找 C++ 字串的 Null 結尾符號 (0)
             int len = Array.IndexOf(nameBuffer, (byte)0);
             if (len < 0) len = 256;
-
-            // 解析為 UTF-8 字串 (支援日文/中文節點名稱)
             string nodeName = System.Text.Encoding.UTF8.GetString(nameBuffer, 0, len);
 
-            // 建立 WinUI 樹狀節點
             var treeNode = new TreeViewNode() { Content = nodeName, IsExpanded = true };
-            nodeMap[i] = treeNode; // 將自己加入字典，方便後面的子節點找爸爸
+            nodeMap[i] = treeNode;
 
-            // 如果是根節點 (parentIndex == -1)，直接加到 UI 的最外層
+            // 記錄這個 UI 節點對應的 C++ index
+            _nodeIndexMap[treeNode] = i;
+
             if (parentIndex == -1)
             {
                 HierarchyTree.RootNodes.Add(treeNode);
             }
             else
             {
-                // 如果有父節點，就把它塞進父節點的 Children 裡面
                 if (nodeMap.TryGetValue(parentIndex, out var parentNode))
                 {
                     parentNode.Children.Add(treeNode);
                 }
             }
         }
+    }
+
+    // 當使用者在 Hierarchy 中點擊某個節點時觸發
+    private void HierarchyTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItem is TreeViewNode selectedNode && _nodeIndexMap.TryGetValue(selectedNode, out int nodeIndex))
+        {
+            NodeNameText.Text = selectedNode.Content.ToString();
+
+            float[] t = new float[3];
+            float[] r = new float[4];
+            float[] s = new float[3];
+
+            RenderBridge.Renderer_GetNodeTransform(nodeIndex, t, r, s);
+
+            // 更新 Position UI
+            PosXText.Text = $"X: {t[0]:F3}";
+            PosYText.Text = $"Y: {t[1]:F3}";
+            PosZText.Text = $"Z: {t[2]:F3}";
+
+            // 更新 Scale UI
+            ScaleXText.Text = $"X: {s[0]:F3}";
+            ScaleYText.Text = $"Y: {s[1]:F3}";
+            ScaleZText.Text = $"Z: {s[2]:F3}";
+
+            // 將四元數 (Quaternion) 轉換為人類易讀的尤拉角 (Euler Angles)
+            var quaternion = new Quaternion(r[0], r[1], r[2], r[3]);
+            var euler = QuaternionToEulerAngles(quaternion);
+
+            // 更新 Rotation UI (顯示度數)
+            RotXText.Text = $"X: {euler.X:F2}°";
+            RotYText.Text = $"Y: {euler.Y:F2}°";
+            RotZText.Text = $"Z: {euler.Z:F2}°";
+        }
+    }
+
+    // 將 Quaternion 轉為 Euler 角 (Pitch, Yaw, Roll)
+    private Vector3 QuaternionToEulerAngles(Quaternion q)
+    {
+        Vector3 angles = new Vector3();
+
+        // Roll (x-axis rotation)
+        double sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
+        double cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
+        angles.X = (float)Math.Atan2(sinr_cosp, cosr_cosp);
+
+        // Pitch (y-axis rotation)
+        double sinp = 2 * (q.W * q.Y - q.Z * q.X);
+        if (Math.Abs(sinp) >= 1)
+            angles.Y = (float)Math.CopySign(Math.PI / 2, sinp); // 使用 90 度
+        else
+            angles.Y = (float)Math.Asin(sinp);
+
+        // Yaw (z-axis rotation)
+        double siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
+        double cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
+        angles.Z = (float)Math.Atan2(siny_cosp, cosy_cosp);
+
+        // 轉換成度數回傳
+        return new Vector3(
+            (float)(angles.X * (180.0 / Math.PI)),
+            (float)(angles.Y * (180.0 / Math.PI)),
+            (float)(angles.Z * (180.0 / Math.PI))
+        );
     }
 
     // ==========================================

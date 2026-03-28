@@ -87,4 +87,14 @@ extern "C" {
         }
     }
 
+    __declspec(dllexport) void Renderer_GetNodeTransform(int index, float* outT, float* outR, float* outS) {
+        auto mesh = g_renderer.GetMesh();
+        if (mesh && index >= 0 && index < mesh->nodes.size()) {
+            const auto& node = mesh->nodes[index];
+            if (outT) { outT[0] = node.t[0]; outT[1] = node.t[1]; outT[2] = node.t[2]; }
+            if (outR) { outR[0] = node.r[0]; outR[1] = node.r[1]; outR[2] = node.r[2]; outR[3] = node.r[3]; }
+            if (outS) { outS[0] = node.s[0]; outS[1] = node.s[1]; outS[2] = node.s[2]; }
+        }
+    }
+
 } // extern "C"

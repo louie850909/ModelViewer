@@ -34,4 +34,7 @@ internal static class RenderBridge
 
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Renderer_GetNodeInfo(int index, byte[] outName, int maxLen, out int outParentIndex);
+
+    [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void Renderer_GetNodeTransform(int index, float[] outT, float[] outR, float[] outS);
 }

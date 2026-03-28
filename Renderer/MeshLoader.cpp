@@ -24,6 +24,16 @@ namespace {
         sn.name = node->mName.C_Str();
         if (sn.name.empty()) sn.name = "Unnamed_Node";
         sn.parentIndex = parentIndex;
+
+        // 分解 Assimp 轉換矩陣
+        aiVector3D scaling, position;
+        aiQuaternion rotation;
+        node->mTransformation.Decompose(scaling, rotation, position);
+
+        sn.t[0] = position.x; sn.t[1] = position.y; sn.t[2] = position.z;
+        sn.r[0] = rotation.x; sn.r[1] = rotation.y; sn.r[2] = rotation.z; sn.r[3] = rotation.w;
+        sn.s[0] = scaling.x; sn.s[1] = scaling.y; sn.s[2] = scaling.z;
+
         outNodes.push_back(sn);
 
         for (unsigned int i = 0; i < node->mNumChildren; i++) {
@@ -35,12 +45,32 @@ namespace {
     void ParseGltfNode(const tinygltf::Model& model, int nodeIndex, int parentIndex, std::vector<SceneNode>& outNodes) {
         int currentIndex = (int)outNodes.size();
         SceneNode sn;
-        sn.name = model.nodes[nodeIndex].name;
+        const auto& gltfNode = model.nodes[nodeIndex];
+        sn.name = gltfNode.name;
         if (sn.name.empty()) sn.name = "Node_" + std::to_string(nodeIndex);
         sn.parentIndex = parentIndex;
+
+        // glTF 可能使用 TRS 陣列 (主動cast以迴避編譯警告)
+        if (gltfNode.translation.size() == 3) {
+            sn.t[0] = static_cast<float>(gltfNode.translation[0]);
+            sn.t[1] = static_cast<float>(gltfNode.translation[1]);
+            sn.t[2] = static_cast<float>(gltfNode.translation[2]);
+        }
+        if (gltfNode.rotation.size() == 4) {
+            sn.r[0] = static_cast<float>(gltfNode.rotation[0]);
+            sn.r[1] = static_cast<float>(gltfNode.rotation[1]);
+            sn.r[2] = static_cast<float>(gltfNode.rotation[2]);
+            sn.r[3] = static_cast<float>(gltfNode.rotation[3]);
+        }
+        if (gltfNode.scale.size() == 3) {
+            sn.s[0] = static_cast<float>(gltfNode.scale[0]);
+            sn.s[1] = static_cast<float>(gltfNode.scale[1]);
+            sn.s[2] = static_cast<float>(gltfNode.scale[2]);
+        }
+
         outNodes.push_back(sn);
 
-        for (int childIndex : model.nodes[nodeIndex].children) {
+        for (int childIndex : gltfNode.children) {
             ParseGltfNode(model, childIndex, currentIndex, outNodes);
         }
     }

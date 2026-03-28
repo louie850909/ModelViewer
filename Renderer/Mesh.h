@@ -19,6 +19,9 @@ struct SubMesh {
 struct SceneNode {
     std::string name;
     int parentIndex = -1; // -1 代表這是根節點 (沒有父節點)
+    float t[3] = { 0.0f, 0.0f, 0.0f };          // Translation
+    float r[4] = { 0.0f, 0.0f, 0.0f, 1.0f };    // Rotation (Quaternion: x, y, z, w)
+    float s[3] = { 1.0f, 1.0f, 1.0f };          // Scale
 };
 
 struct Mesh {
