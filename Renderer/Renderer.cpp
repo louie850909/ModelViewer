@@ -277,11 +277,16 @@ void Renderer::RenderFrame() {
     }
 }
 
-void Renderer::Resize(int width, int height) {
+void Renderer::Resize(int width, int height, float scale) {
     std::lock_guard<std::mutex> lock(m_renderMutex);
 
     // 加入 0 尺寸防呆，避免除以零或建立無效材質
     if (width <= 0 || height <= 0) return;
+
+    // 建立一個反向縮放的矩陣 (1 / scale)
+    DXGI_MATRIX_3X2_F inverseScale = { 1.0f / scale, 0.0f, 0.0f, 1.0f / scale, 0.0f, 0.0f };
+    m_swapChain->SetMatrixTransform(&inverseScale);
+
     if (width == m_width && height == m_height) return;
     WaitForGpu();
     for (auto& rt : m_renderTargets) rt.Reset();

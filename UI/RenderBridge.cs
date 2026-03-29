@@ -11,7 +11,7 @@ internal static class RenderBridge
     public static extern bool Renderer_Init(IntPtr panelUnknown, int width, int height);
 
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void Renderer_Resize(int width, int height);
+    public static extern void Renderer_Resize(int width, int height, float scale);
 
     // 宣告與 C++ 對應的委派 (Delegate)，必須標註 Cdecl 呼叫慣例
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]

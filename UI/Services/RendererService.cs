@@ -39,9 +39,16 @@ internal sealed class RendererService : IDisposable
     public void Resize(double width, double height, double rasterizationScale)
     {
         if (!_initialized) return;
+
+        // 計算出正確的實體像素 (Physical Pixels)
         int w = (int)(width * rasterizationScale);
         int h = (int)(height * rasterizationScale);
-        if (w > 0 && h > 0) RenderBridge.Renderer_Resize(w, h);
+
+        // 將實體尺寸與縮放比例一起傳給 C++
+        if (w > 0 && h > 0)
+        {
+            RenderBridge.Renderer_Resize(w, h, (float)rasterizationScale);
+        }
     }
 
     public void Shutdown()
