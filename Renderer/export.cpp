@@ -4,131 +4,141 @@
 #include <thread>
 #include <atomic>
 
-static Renderer          g_renderer;
-static std::thread       g_renderThread;
-static std::atomic<bool> g_running{ false };
-static std::atomic<bool> g_resizePending{ false };
-static std::atomic<int>  g_newW{ 0 }; // 改為 atomic
-static std::atomic<int>  g_newH{ 0 }; // 改為 atomic
+static Renderer           g_renderer;
+static std::thread        g_renderThread;
+static std::atomic<bool>  g_running{ false };
+static std::atomic<bool>  g_resizePending{ false };
+static std::atomic<int>   g_newW{ 0 };
+static std::atomic<int>   g_newH{ 0 };
 static std::atomic<float> g_newScale{ 1.0f };
 
 extern "C" {
 
-    typedef void (*LoadCallback)();
+typedef void (*LoadCallback)(int meshId);
 
-    __declspec(dllexport) bool Renderer_Init(IUnknown* panelUnknown, int width, int height) {
-        if (!g_renderer.Init(panelUnknown, width, height)) return false;
-        g_running = true;
-        g_renderThread = std::thread([]() {
-            while (g_running) {
-                if (g_resizePending.exchange(false))
-                    g_renderer.Resize(g_newW, g_newH, g_newScale); // 傳入 scale
-
-                g_renderer.RenderFrame();
-            }
-            });
-        return true;
-    }
-
-    __declspec(dllexport) void Renderer_Resize(int width, int height, float scale) {
-        g_newW.store(width);
-        g_newH.store(height);
-        g_newScale.store(scale);
-        g_resizePending.store(true);
-    }
-
-    __declspec(dllexport) void Renderer_Shutdown() {
-        g_running = false;
-        if (g_renderThread.joinable()) g_renderThread.join();
-        g_renderer.Shutdown();
-    }
-
-    __declspec(dllexport) bool Renderer_LoadModel(const char* path, LoadCallback callback) {
-        std::string filePath(path);
-
-        // 啟動背景執行緒處理載入
-        std::thread([filePath, callback]() {
-            auto mesh = MeshLoader::Load(filePath);
-            if (mesh) {
-                g_renderer.UploadMeshToGpu(mesh);
-            }
-
-            // 載入與 GPU 上傳全部完成後，呼叫 C# 傳進來的 Callback
-            if (callback) {
-                callback();
-            }
-            }).detach();
-
-        return true;
-    }
-
-    __declspec(dllexport) void Renderer_SetCameraTransform(float px, float py, float pz, float pitch, float yaw) {
-        g_renderer.SetCameraTransform(px, py, pz, pitch, yaw);
-    }
-
-    __declspec(dllexport) void Renderer_GetStats(int* vertices, int* polygons, int* drawCalls, float* frameTimeMs) {
-        if (vertices && polygons && drawCalls && frameTimeMs) {
-            g_renderer.GetStats(*vertices, *polygons, *drawCalls, *frameTimeMs);
+// ---------------------------------------------------------------------------
+// 生命週期
+// ---------------------------------------------------------------------------
+__declspec(dllexport) bool Renderer_Init(IUnknown* panelUnknown, int width, int height) {
+    if (!g_renderer.Init(panelUnknown, width, height)) return false;
+    g_running = true;
+    g_renderThread = std::thread([]() {
+        while (g_running) {
+            if (g_resizePending.exchange(false))
+                g_renderer.Resize(g_newW, g_newH, g_newScale);
+            g_renderer.RenderFrame();
         }
-    }
+    });
+    return true;
+}
 
-    __declspec(dllexport) int Renderer_GetNodeCount() {
-        auto mesh = g_renderer.GetMesh();
-        return mesh ? (int)mesh->nodes.size() : 0;
-    }
+__declspec(dllexport) void Renderer_Resize(int width, int height, float scale) {
+    g_newW.store(width); g_newH.store(height); g_newScale.store(scale);
+    g_resizePending.store(true);
+}
 
-    __declspec(dllexport) void Renderer_GetNodeInfo(int index, char* outName, int maxLen, int* outParentIndex) {
-        auto mesh = g_renderer.GetMesh();
-        if (mesh && index >= 0 && index < (int)mesh->nodes.size()) {
-            const auto& node = mesh->nodes[index];
-            if (outParentIndex) *outParentIndex = node.parentIndex;
-            if (outName && maxLen > 0) {
-                // 安全複製字串，避免溢位
-                strncpy_s(outName, maxLen, node.name.c_str(), _TRUNCATE);
-            }
+__declspec(dllexport) void Renderer_Shutdown() {
+    g_running = false;
+    if (g_renderThread.joinable()) g_renderThread.join();
+    g_renderer.Shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// 模型載入 / 移除
+// ---------------------------------------------------------------------------
+__declspec(dllexport) int Renderer_AddModel(const char* path, LoadCallback callback) {
+    std::string filePath(path);
+    int meshId = g_renderer.AddMesh(nullptr);
+    std::thread([filePath, callback, meshId]() {
+        auto mesh = MeshLoader::Load(filePath);
+        if (mesh)
+            g_renderer.UploadMeshToGpu(mesh, meshId);
+        if (callback) callback(meshId);
+    }).detach();
+    return meshId;
+}
+
+__declspec(dllexport) void Renderer_RemoveModel(int meshId) {
+    g_renderer.RemoveMeshById(meshId);
+}
+
+__declspec(dllexport) bool Renderer_LoadModel(const char* path, void (*legacyCallback)()) {
+    std::string filePath(path);
+    std::thread([filePath, legacyCallback]() {
+        auto mesh = MeshLoader::Load(filePath);
+        if (mesh) {
+            int meshId = g_renderer.AddMesh(nullptr);
+            g_renderer.UploadMeshToGpu(mesh, meshId);
         }
-    }
+        if (legacyCallback) legacyCallback();
+    }).detach();
+    return true;
+}
 
-    // [修正] 加上 m_renderMutex，避免 render thread 讀取時發生 data race
-    __declspec(dllexport) void Renderer_GetNodeTransform(int index, float* outT, float* outR, float* outS) {
-        std::lock_guard<std::mutex> lock(g_renderer.m_renderMutex);
-        auto mesh = g_renderer.GetMesh();
-        if (mesh && index >= 0 && index < (int)mesh->nodes.size()) {
-            const auto& node = mesh->nodes[index];
-            if (outT) { outT[0] = node.t[0]; outT[1] = node.t[1]; outT[2] = node.t[2]; }
-            if (outR) { outR[0] = node.r[0]; outR[1] = node.r[1]; outR[2] = node.r[2]; outR[3] = node.r[3]; }
-            if (outS) { outS[0] = node.s[0]; outS[1] = node.s[1]; outS[2] = node.s[2]; }
-        }
-    }
+// ---------------------------------------------------------------------------
+// 相機
+// ---------------------------------------------------------------------------
+__declspec(dllexport) void Renderer_SetCameraTransform(float px, float py, float pz, float pitch, float yaw) {
+    g_renderer.SetCameraTransform(px, py, pz, pitch, yaw);
+}
 
-    // [修正] 加上 m_renderMutex，避免寫入時 render thread 同時讀取造成 data race
-    __declspec(dllexport) void Renderer_SetNodeTransform(int index, float* inT, float* inR, float* inS) {
-        std::lock_guard<std::mutex> lock(g_renderer.m_renderMutex);
-        auto mesh = g_renderer.GetMesh();
-        if (mesh && index >= 0 && index < (int)mesh->nodes.size()) {
-            auto& node = mesh->nodes[index];
-            if (inT) { node.t[0] = inT[0]; node.t[1] = inT[1]; node.t[2] = inT[2]; }
-            if (inR) { node.r[0] = inR[0]; node.r[1] = inR[1]; node.r[2] = inR[2]; node.r[3] = inR[3]; }
-            if (inS) { node.s[0] = inS[0]; node.s[1] = inS[1]; node.s[2] = inS[2]; }
-        }
-    }
+// ---------------------------------------------------------------------------
+// 統計
+// ---------------------------------------------------------------------------
+__declspec(dllexport) void Renderer_GetStats(int* vertices, int* polygons, int* drawCalls, float* frameTimeMs) {
+    if (vertices && polygons && drawCalls && frameTimeMs)
+        g_renderer.GetStats(*vertices, *polygons, *drawCalls, *frameTimeMs);
+}
 
-    // [新增] Batch 更新所有 Node 的 Transform，單次 P/Invoke 傳入一維 float 陣列
-    // 每個 Node 佔 10 個 float，格式：T(3) + R(4) + S(3)
-    // data 指向 C# 端 GCHandle.Pinned 的記憶體，C++ 直接讀取，零拷貝
-    __declspec(dllexport) void Renderer_SetAllNodeTransforms(const float* data, int nodeCount) {
-        std::lock_guard<std::mutex> lock(g_renderer.m_renderMutex);
-        auto mesh = g_renderer.GetMesh();
-        if (!mesh || !data) return;
+// ---------------------------------------------------------------------------
+// Node API  (globalIndex = meshId * MESH_NODE_STRIDE + localIndex)
+// ---------------------------------------------------------------------------
+__declspec(dllexport) int Renderer_GetTotalNodeCount() {
+    return g_renderer.GetTotalNodeCount();
+}
 
-        int count = min(nodeCount, (int)mesh->nodes.size());
-        for (int i = 0; i < count; i++) {
-            const float* p = data + i * 10;
-            auto& node = mesh->nodes[i];
-            node.t[0] = p[0]; node.t[1] = p[1]; node.t[2] = p[2];
-            node.r[0] = p[3]; node.r[1] = p[4]; node.r[2] = p[5]; node.r[3] = p[6];
-            node.s[0] = p[7]; node.s[1] = p[8]; node.s[2] = p[9];
-        }
+__declspec(dllexport) int Renderer_GetNodeCount() {
+    auto mesh = g_renderer.GetMesh();
+    return mesh ? (int)mesh->nodes.size() : 0;
+}
+
+__declspec(dllexport) void Renderer_GetNodeInfo(
+    int globalIndex, char* outName, int maxLen, int* outParentGlobalIndex)
+{
+    std::string name;
+    int parentGlobal = -1;
+    if (g_renderer.GetNodeInfo(globalIndex, name, parentGlobal)) {
+        if (outName && maxLen > 0) strncpy_s(outName, maxLen, name.c_str(), _TRUNCATE);
+        if (outParentGlobalIndex) *outParentGlobalIndex = parentGlobal;
+    } else {
+        // 查無定節點時，諾輸出空字串供 C# CountNodesForMesh 判斷邊界
+        if (outName && maxLen > 0) outName[0] = '\0';
+        if (outParentGlobalIndex) *outParentGlobalIndex = -1;
     }
+}
+
+__declspec(dllexport) void Renderer_GetNodeTransform(
+    int globalIndex, float* outT, float* outR, float* outS)
+{
+    std::lock_guard<std::mutex> lock(g_renderer.m_renderMutex);
+    g_renderer.GetNodeTransform(globalIndex, outT, outR, outS);
+}
+
+__declspec(dllexport) void Renderer_SetNodeTransform(
+    int globalIndex, float* inT, float* inR, float* inS)
+{
+    std::lock_guard<std::mutex> lock(g_renderer.m_renderMutex);
+    g_renderer.SetNodeTransform(globalIndex, inT, inR, inS);
+}
+
+__declspec(dllexport) void Renderer_SetAllNodeTransforms(const float* data, int nodeCount) {
+    std::lock_guard<std::mutex> lock(g_renderer.m_renderMutex);
+    // 每個 entry stride = 11：[globalIndex(float), tx,ty,tz, rx,ry,rz,rw, sx,sy,sz]
+    for (int i = 0; i < nodeCount; i++) {
+        const float* p = data + i * 11;
+        int gIdx = (int)p[0];
+        g_renderer.SetNodeTransform(gIdx, p + 1, p + 4, p + 8);
+    }
+}
 
 } // extern "C"
