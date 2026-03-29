@@ -15,8 +15,7 @@ internal sealed class MainViewModel : IDisposable
     public HierarchyViewModel Hierarchy { get; } = new();
     public TransformViewModel Transform { get; }
 
-    // 批次刷入用的 batcher 與暫存記憶體
-    private readonly NodeTransformBatcher _batcher = new();
+    private readonly NodeTransformBatcher _batcher      = new();
     private readonly List<NodeEntry>      _dirtyEntries = new();
 
     private bool _isLoading;
@@ -37,7 +36,7 @@ internal sealed class MainViewModel : IDisposable
     /// <summary>
     /// 每幀由 GameLoop 呼叫：
     /// 1. 推送相機狀態
-    /// 2. 收集所有 dirty node 的 Transform，單次 P/Invoke 刷入 C++
+    /// 2. 收集所有 dirty node Transform，單次 P/Invoke 刷入 C++
     /// 3. 更新效能統計
     /// </summary>
     public void Tick()
@@ -46,40 +45,46 @@ internal sealed class MainViewModel : IDisposable
         var c = Camera;
         Renderer.SetCamera(c.Position.X, c.Position.Y, c.Position.Z, c.Pitch, c.Yaw);
 
-        // 2. 收集 dirty Transform 并批次刷入
-        //    目前只有一個 TransformViewModel 可被編輯，
-        //    未來支援多個同時編輯時可擴展為遍走所有 VM
+        // 2. 收集 dirty 并批次刷入
         if (Transform.IsDirty)
         {
             _dirtyEntries.Clear();
 
-            // 目前只有單點被修改：直接封裝為單元素清單
-            // 如果未來需要批量點同時修改，可改為遍走 TransformViewModels
-            int nodeCount = Renderer.GetNodeCount();
-            for (int i = 0; i < nodeCount; i++)
-            {
-                // 只有目前選取點被標記為 dirty。
-                // 若是選取點則取新 entry，其餘取 C++ 現有資料
-                if (i == Transform.NodeIndex && Transform.IsDirty)
-                {
-                    _dirtyEntries.Add(Transform.BuildEntry());
-                }
-                else
-                {
-                    var (t, r, s) = Renderer.GetNodeTransform(i);
-                    _dirtyEntries.Add(NodeEntry.FromArrays(t, r, s));
-                }
-            }
+            // 遍走場景內所有節點（所有 mesh 的全域 globalIndex）
+            // Hierarchy.RootNodes 已含所有 mesh 的根節點，遞迴收集全樹
+            CollectAllNodeEntries(Hierarchy.RootNodes);
 
             Renderer.FlushNodeTransforms(_batcher, _dirtyEntries);
-
-            // 清除 dirty flag （本幀已刷入）
             Transform.ClearDirty();
         }
 
         // 3. 效能統計
         var (v, p, dc, ft) = Renderer.GetStats();
         Stats.Update(v, p, dc, ft);
+    }
+
+    /// <summary>
+    /// 遞迴收集全樹的 NodeEntry：
+    /// - 選取節點用 VM 最新值（Transform.BuildEntry）
+    /// - 其餘節點直接從 C++ 讀回現有值（GetNodeTransform）
+    /// </summary>
+    private void CollectAllNodeEntries(
+        System.Collections.ObjectModel.ObservableCollection<NodeItem> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            NodeEntry entry;
+            if (node.GlobalIndex == Transform.NodeIndex && Transform.IsDirty)
+                entry = Transform.BuildEntry();
+            else {
+                var (t, r, s) = Renderer.GetNodeTransform(node.GlobalIndex);
+                entry = NodeEntry.FromArrays(node.GlobalIndex, t, r, s);
+            }
+            _dirtyEntries.Add(entry);
+
+            if (node.Children.Count > 0)
+                CollectAllNodeEntries(node.Children);
+        }
     }
 
     public void Dispose() => _batcher.Dispose();

@@ -10,7 +10,7 @@ namespace UI.ViewModels;
 internal sealed class TransformViewModel : ObservableObject
 {
     private readonly RendererService _renderer;
-    private int _nodeIndex = -1;
+    private int _nodeIndex = -1;   // 儲存 globalIndex
 
     public TransformViewModel(RendererService renderer)
         => _renderer = renderer;
@@ -36,27 +36,22 @@ internal sealed class TransformViewModel : ObservableObject
     private string _nodeName = string.Empty;
     public string NodeName { get => _nodeName; private set => SetProperty(ref _nodeName, value); }
 
-    /// <summary>目前選取節點的 CppIndex。</summary>
+    /// <summary>GlobalIndex = meshId * MeshNodeStride + localIndex。</summary>
     public int NodeIndex => _nodeIndex;
 
-    /// <summary>
-    /// 標記此幀是否有未同步的變更。
-    /// Apply() / TryApplyFromStrings() 被呼叫時自動設為 true，
-    /// Tick() 刷入完成後呼叫 ClearDirty() 重置。
-    /// </summary>
+    /// <summary>dirty flag：Apply / TryApplyFromStrings 第一個呼叫時設為 true。</summary>
     public bool IsDirty { get; private set; } = false;
 
-    /// <summary>儱除 dirty 標記，由 MainViewModel.Tick() 在刷入完成後呼叫。</summary>
+    /// <summary>儱除 dirty flag，由 MainViewModel.Tick() 在刷入完成後呼叫。</summary>
     public void ClearDirty() => IsDirty = false;
 
     // ── 公開操作 ─────────────────────────────────
 
-    /// <summary>載入指定節點的 Transform 到 VM 屬性。</summary>
     public void LoadNode(NodeItem? node)
     {
         if (node == null) { _nodeIndex = -1; NodeName = string.Empty; return; }
 
-        _nodeIndex = node.CppIndex;
+        _nodeIndex = node.GlobalIndex; // 使用 globalIndex
         NodeName   = node.Name;
 
         var (t, r, s) = _renderer.GetNodeTransform(_nodeIndex);
@@ -70,7 +65,8 @@ internal sealed class TransformViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 將目前 VM 的屬性轉成 NodeEntry，由 MainViewModel.Tick() 收集使用。
+    /// 將目前 VM 屬性轉成 NodeEntry，包含 globalIndex。
+    /// 由 MainViewModel.Tick() 收集使用。
     /// </summary>
     public NodeEntry BuildEntry()
     {
@@ -79,15 +75,13 @@ internal sealed class TransformViewModel : ObservableObject
         float roll  = RZ * (float)(Math.PI / 180.0);
         Quaternion q = Quaternion.CreateFromYawPitchRoll(yaw, pitch, roll);
         return new NodeEntry(
+            _nodeIndex,          // globalIndex
             PX, PY, PZ,
             q.X, q.Y, q.Z, q.W,
             SX, SY, SZ);
     }
 
-    /// <summary>
-    /// 將目前 VM 的傀寫回 C++（單點立即生效，保留相容）。
-    /// 同時設置 IsDirty = true，讓 Tick() 得知需要批次刷新。
-    /// </summary>
+    /// <summary>將目前 VM 屬性立即寫回 C++（單點並設為 dirty）。</summary>
     public void Apply()
     {
         if (_nodeIndex < 0) return;
@@ -105,7 +99,6 @@ internal sealed class TransformViewModel : ObservableObject
         _renderer.SetNodeTransform(_nodeIndex, t, r, s);
     }
 
-    /// <summary>嘗試從字串套用，輸入非數字時靜默略過。</summary>
     public bool TryApplyFromStrings(
         string px, string py, string pz,
         string rx, string ry, string rz,
