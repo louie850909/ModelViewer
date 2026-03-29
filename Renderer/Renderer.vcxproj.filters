@@ -16,6 +16,15 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{4f61e79c-80e3-4ec1-a176-e508a03224f1}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ソース ファイル\Core">
+      <UniqueIdentifier>{d0beb649-7a76-41f9-a982-eb89e6a07be8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Scene">
+      <UniqueIdentifier>{c0fd6db2-1b0c-4e17-b6df-58353f806ebe}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Resources">
+      <UniqueIdentifier>{aadb2eb4-d430-48a7-a408-4e1ac0455017}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -33,6 +42,15 @@
     <ClInclude Include="MeshLoader.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="GraphicsContext.h">
+      <Filter>ソース ファイル\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene.h">
+      <Filter>ソース ファイル\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="GBuffer.h">
+      <Filter>ソース ファイル\Resources</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -47,12 +65,27 @@
     <ClCompile Include="MeshLoader.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="GraphicsContext.cpp">
+      <Filter>ソース ファイル\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene.cpp">
+      <Filter>ソース ファイル\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="GBuffer.cpp">
+      <Filter>ソース ファイル\Resources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shaders\BaseColor.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="shaders\GBuffer.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="shaders\DeferredLight.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
   </ItemGroup>

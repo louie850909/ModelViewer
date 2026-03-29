@@ -271,13 +271,18 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />
+    <ClInclude Include="GBuffer.h" />
+    <ClInclude Include="GraphicsContext.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="MeshLoader.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Renderer.h" />
+    <ClInclude Include="Scene.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="export.cpp" />
+    <ClCompile Include="GBuffer.cpp" />
+    <ClCompile Include="GraphicsContext.cpp" />
     <ClCompile Include="MeshLoader.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -286,12 +291,23 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Renderer.cpp" />
+    <ClCompile Include="Scene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shaders\BaseColor.hlsl">
+      <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\GBuffer.hlsl">
+      <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\DeferredLight.hlsl">
       <FileType>Document</FileType>
     </CustomBuild>
   </ItemGroup>

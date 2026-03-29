@@ -1,0 +1,45 @@
+#pragma once
+#include "pch.h"
+#include <stdexcept>
+
+class GBuffer {
+public:
+    void Init(ID3D12Device* device, int width, int height);
+    void Resize(ID3D12Device* device, int width, int height);
+    void Shutdown();
+
+    // 取得底層資源 (如果需要設定 Barrier)
+    ID3D12Resource* GetAlbedo() const { return m_albedo.Get(); }
+    ID3D12Resource* GetNormal() const { return m_normal.Get(); }
+    ID3D12Resource* GetWorldPos() const { return m_worldPos.Get(); }
+
+    // 取得 Descriptor Heaps
+    ID3D12DescriptorHeap* GetRtvHeap() const { return m_rtvHeap.Get(); }
+    ID3D12DescriptorHeap* GetSrvHeap() const { return m_srvHeap.Get(); }
+
+    // 取得 RTV Handle (Geometry Pass 寫入時用)
+    D3D12_CPU_DESCRIPTOR_HANDLE GetRtvStart() const {
+        return m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    }
+
+    // 取得 SRV Handle (Lighting Pass 讀取時用)
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSrvStart() const {
+        return m_srvHeap->GetGPUDescriptorHandleForHeapStart();
+    }
+
+    static constexpr int TargetCount = 3;
+
+private:
+    void CreateResources(ID3D12Device* device, int width, int height);
+    void CreateHeapsAndViews(ID3D12Device* device);
+
+    ComPtr<ID3D12Resource> m_albedo;    // RT0: RGB = Albedo, A = Roughness
+    ComPtr<ID3D12Resource> m_normal;    // RT1: RGB = Normal, A = Metallic
+    ComPtr<ID3D12Resource> m_worldPos;  // RT2: RGB = WorldPos, A = Custom
+
+    ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
+    ComPtr<ID3D12DescriptorHeap> m_srvHeap;
+
+    UINT m_rtvDescSize = 0;
+    UINT m_srvDescSize = 0;
+};
