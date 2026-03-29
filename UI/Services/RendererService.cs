@@ -12,13 +12,11 @@ namespace UI.Services;
 /// </summary>
 internal sealed class RendererService : IDisposable
 {
-    // MESH_NODE_STRIDE 必須與 C++ 端一致
     public const int MeshNodeStride = 10000;
 
-    private IntPtr _panelPtr = IntPtr.Zero;
+    private IntPtr _panelPtr   = IntPtr.Zero;
     private bool   _initialized = false;
     private RenderBridge.AddModelCallback? _addModelCallback;
-    private RenderBridge.LoadCallback?     _loadCallback; // 舊相容
 
     public bool IsInitialized => _initialized;
 
@@ -37,7 +35,7 @@ internal sealed class RendererService : IDisposable
     public void Resize(double width, double height, double rasterizationScale)
     {
         if (!_initialized) return;
-        int w = (int)(width * rasterizationScale);
+        int w = (int)(width  * rasterizationScale);
         int h = (int)(height * rasterizationScale);
         if (w > 0 && h > 0) RenderBridge.Renderer_Resize(w, h, (float)rasterizationScale);
     }
@@ -68,10 +66,6 @@ internal sealed class RendererService : IDisposable
 
     // ── 模型載入 / 移除 ────────────────────────────────
 
-    /// <summary>
-    /// 從背景載入模型並追加到場景。
-    /// 完成後回傳 meshId。
-    /// </summary>
     public Task<int> AddModelAsync(string path)
     {
         var tcs = new TaskCompletionSource<int>();
@@ -80,7 +74,6 @@ internal sealed class RendererService : IDisposable
         return tcs.Task;
     }
 
-    /// <summary>從場景移除指定 meshId 的模型。</summary>
     public void RemoveModel(int meshId)
     {
         if (_initialized) RenderBridge.Renderer_RemoveModel(meshId);
@@ -91,7 +84,6 @@ internal sealed class RendererService : IDisposable
     public int GetTotalNodeCount() =>
         _initialized ? RenderBridge.Renderer_GetTotalNodeCount() : 0;
 
-    /// <summary>建構 meshId 返回的所有 globalIndex 清單。</summary>
     public IEnumerable<int> GetGlobalIndicesForMesh(int meshId, int nodeCount)
     {
         for (int i = 0; i < nodeCount; i++)

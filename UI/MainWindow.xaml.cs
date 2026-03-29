@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using UI.Input;
@@ -22,7 +23,7 @@ public sealed partial class MainWindow : Window
     // TreeViewNode → NodeItem 映射表
     private readonly Dictionary<TreeViewNode, NodeItem> _nodeMap = new();
 
-    // 每個模型的根 TreeViewNode，用於倇除模型時清除
+    // 每個模型的根 TreeViewNode 清單，用於倇除模型時清除
     private readonly Dictionary<int, List<TreeViewNode>> _meshRootNodes = new();
 
     public MainWindow()
@@ -101,38 +102,29 @@ public sealed partial class MainWindow : Window
         if (file == null) return;
 
         _vm.IsLoading = true;
-        // 追加模型到場景（取代原本的取代語意）
         int meshId = await _vm.Renderer.AddModelAsync(file.Path);
         _vm.IsLoading = false;
 
-        // 取得這個 mesh 的 node 數量
-        // 注： C++ 節點數量可由 GetTotalNodeCount 前後差分析，
-        //      或者暴挙地由 meshId * STRIDE 開始這時試到第一個無效 index。
-        //      简化作法：利用 GetNodeInfo 回傳的失效來尌界。
         int localCount = CountNodesForMesh(meshId);
         AppendMeshToHierarchy(meshId, localCount);
     }
 
-    /// <summary>
-    /// 將指定 meshId 的所有節點追加到 TreeView。
-    /// </summary>
+    /// <summary>將指定 meshId 的所有節點追加到 TreeView。</summary>
     private void AppendMeshToHierarchy(int meshId, int localNodeCount)
     {
         _vm.Hierarchy.AddMeshNodes(_vm.Renderer, meshId, localNodeCount);
 
-        // 記錄此 mesh 對應的所有 root TreeViewNode（用於稍後即時尋找删除）
         var meshRoots = new List<TreeViewNode>();
         _meshRootNodes[meshId] = meshRoots;
 
-        AppendTreeNodes(
-            _vm.Hierarchy.RootNodes
-                .Where(n => n.MeshId == meshId)
-                .ToList(),
-            HierarchyTree.RootNodes,
-            meshRoots);
+        var rootsForThisMesh = _vm.Hierarchy.RootNodes
+            .Where(n => n.MeshId == meshId)
+            .ToList();
+
+        AppendTreeNodes(rootsForThisMesh, HierarchyTree.RootNodes, meshRoots);
     }
 
-    /// <summary>加載後計算 mesh 的屬地 node 數量。</summary>
+    /// <summary>計算 mesh 屬地 node 數量。</summary>
     private int CountNodesForMesh(int meshId)
     {
         int count = 0;
@@ -140,11 +132,10 @@ public sealed partial class MainWindow : Window
         byte[] buf = new byte[256];
         for (int local = 0; local < stride; local++)
         {
-            int gIdx = meshId * stride + local;
-            RenderBridge.Renderer_GetNodeInfo(gIdx, buf, buf.Length, out int _);
-            if (buf[0] == 0) break; // 名稱為空字串代表超出範圍
+            buf[0] = 0;
+            RenderBridge.Renderer_GetNodeInfo(meshId * stride + local, buf, buf.Length, out int _);
+            if (buf[0] == 0) break;
             count++;
-            buf[0] = 0; // 清除以便下次建檔
         }
         return count;
     }
@@ -158,13 +149,8 @@ public sealed partial class MainWindow : Window
         {
             var node = new TreeViewNode { Content = item.Name, IsExpanded = true };
             _nodeMap[node] = item;
-
-            // 綁定右鍵選單
-            node.SetValue(FrameworkElement.TagProperty, item);
-
             target.Add(node);
             rootTracker?.Add(node);
-
             if (item.Children.Count > 0)
                 AppendTreeNodes(item.Children, node.Children);
         }
@@ -198,38 +184,28 @@ public sealed partial class MainWindow : Window
 
     // ── 右鍵倇除模型 ───────────────────────────────────
 
-    /// <summary>
-    /// 在 TreeView 項目上右鍵，顯示包含「删除模型」的 ContextFlyout。
-    /// 如果所選節點是根節點（parentIndex == -1）則允許删除；
-    /// 子節點不允許単獨删除（必須删除整個模型）。
-    /// </summary>
     private void HierarchyTreeItem_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         if (sender is not FrameworkElement fe) return;
-        var treeNode = fe.DataContext as TreeViewNode;
-        if (treeNode == null || !_nodeMap.TryGetValue(treeNode, out var nodeItem)) return;
-
-        // 只對根節點（模型頂層）提供删除選項
-        if (nodeItem.ParentIndex != -1) return;
+        if (fe.DataContext is not TreeViewNode treeNode) return;
+        if (!_nodeMap.TryGetValue(treeNode, out var nodeItem)) return;
+        if (nodeItem.ParentIndex != -1) return; // 只對根節點提供删除
 
         var flyout = new MenuFlyout();
         var deleteItem = new MenuFlyoutItem { Text = "删除模型" };
         deleteItem.Click += (_, _) => DeleteModel(nodeItem.MeshId);
         flyout.Items.Add(deleteItem);
         flyout.ShowAt(fe, e.GetPosition(fe));
-
         e.Handled = true;
     }
 
     private void DeleteModel(int meshId)
     {
-        // 1. 移除 C++ 端渲染資料
+        // 1. C++ 渲染資料
         _vm.Renderer.RemoveModel(meshId);
-
-        // 2. 清除 ViewModel 樹狀
+        // 2. ViewModel 樹狀
         _vm.Hierarchy.RemoveMeshNodes(meshId);
-
-        // 3. 清除 TreeView UI
+        // 3. TreeView UI
         if (_meshRootNodes.TryGetValue(meshId, out var roots)) {
             foreach (var r in roots) {
                 HierarchyTree.RootNodes.Remove(r);
@@ -237,8 +213,7 @@ public sealed partial class MainWindow : Window
             }
             _meshRootNodes.Remove(meshId);
         }
-
-        // 4. 如果選取的節點屬於此 mesh，清除選取
+        // 4. 清除選取狀態
         if (_vm.Hierarchy.SelectedNode?.MeshId == meshId)
             _vm.Hierarchy.SelectedNode = null;
     }
@@ -263,6 +238,7 @@ public sealed partial class MainWindow : Window
 
     // ── 工具 ─────────────────────────────────────────────
 
+    // 取得某 meshId 屬下的所有 NodeItem
     private IEnumerable<NodeItem> GetNodesForMesh(int meshId)
         => _nodeMap.Values.Where(n => n.MeshId == meshId);
 }
