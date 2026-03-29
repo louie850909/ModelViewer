@@ -10,6 +10,7 @@ static std::atomic<bool> g_running{ false };
 static std::atomic<bool> g_resizePending{ false };
 static std::atomic<int>  g_newW{ 0 }; // 改為 atomic
 static std::atomic<int>  g_newH{ 0 }; // 改為 atomic
+static std::atomic<float> g_newScale{ 1.0f };
 
 extern "C" {
 
@@ -21,17 +22,18 @@ extern "C" {
         g_renderThread = std::thread([]() {
             while (g_running) {
                 if (g_resizePending.exchange(false))
-                    g_renderer.Resize(g_newW, g_newH); // 內部會自己鎖
+                    g_renderer.Resize(g_newW, g_newH, g_newScale); // 傳入 scale
 
-                g_renderer.RenderFrame(); // 內部會自己鎖
+                g_renderer.RenderFrame();
             }
             });
         return true;
     }
 
-    __declspec(dllexport) void Renderer_Resize(int width, int height) {
+    __declspec(dllexport) void Renderer_Resize(int width, int height, float scale) {
         g_newW.store(width);
         g_newH.store(height);
+        g_newScale.store(scale);
         g_resizePending.store(true);
     }
 

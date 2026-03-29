@@ -25,7 +25,7 @@ class Renderer {
 public:
     std::mutex m_renderMutex;
     bool Init(IUnknown* panelUnknown, int width, int height);
-    void Resize(int width, int height);
+    void Resize(int width, int height, float scale);
     void RenderFrame();
     void Shutdown();
     void UploadMeshToGpu(std::shared_ptr<Mesh> mesh); // ← 供 exports.cpp 呼叫

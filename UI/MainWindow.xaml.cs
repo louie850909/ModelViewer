@@ -50,8 +50,13 @@ public sealed partial class MainWindow : Window
 
     private void RenderPanel_Loaded(object sender, RoutedEventArgs e)
     {
-        int w = (int)RenderPanel.ActualWidth;
-        int h = (int)RenderPanel.ActualHeight;
+        // 取得當前螢幕的縮放比例
+        double scale = RenderPanel.XamlRoot.RasterizationScale;
+
+        // Init 需要接收實體像素 (Physical Pixels)
+        int w = (int)(RenderPanel.ActualWidth * scale);
+        int h = (int)(RenderPanel.ActualHeight * scale);
+
         if (w == 0 || h == 0) return;
 
         bool ok = _vm.Renderer.Init(RenderPanel, w, h);
@@ -59,7 +64,9 @@ public sealed partial class MainWindow : Window
 
         if (ok)
         {
-            // 注入取得選取節點位置的回呼
+            // Init 成功後，立刻呼叫一次 Resize 以套用反向縮放矩陣
+            _vm.Renderer.Resize(RenderPanel.ActualWidth, RenderPanel.ActualHeight, scale);
+
             _cameraInput = new CameraInputHandler(
                 RenderPanel,
                 _vm.Camera,
