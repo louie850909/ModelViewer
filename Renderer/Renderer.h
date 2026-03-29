@@ -52,6 +52,7 @@ private:
 
     UINT m_srvDescriptorSize = 0;
 
+    std::atomic<bool> m_isShuttingDown{ false };
     std::atomic<int>   m_statVertices{ 0 };
     std::atomic<int>   m_statPolygons{ 0 };
     std::atomic<int>   m_statDrawCalls{ 0 };

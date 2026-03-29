@@ -32,13 +32,24 @@ bool Renderer::Init(IUnknown* panelUnknown, int width, int height) {
 }
 
 void Renderer::Shutdown() {
+    m_isShuttingDown = true;
+
     std::lock_guard<std::mutex> lock(m_renderMutex);
+    m_ctx.WaitForGpu();
     m_gBuffer.Shutdown();
     m_ctx.Shutdown();
 }
 
 void Renderer::Resize(int width, int height, float scale) {
+    if (m_isShuttingDown) return;
+
     std::lock_guard<std::mutex> lock(m_renderMutex);
+    // 拿到鎖之後再次確認，避免在等待鎖的期間 Shutdown 被觸發
+    if (m_isShuttingDown) {
+        m_renderMutex.unlock();
+        return;
+    }
+
     m_ctx.Resize(width, height, scale);
 
     if (m_ctx.GetDevice() != nullptr && width > 0 && height > 0) {
@@ -58,6 +69,9 @@ void Renderer::GetStats(int& vertices, int& polygons, int& drawCalls, float& fra
 // RenderFrame (核心渲染迴圈)
 // ---------------------------------------------------------------------------
 void Renderer::RenderFrame() {
+    // 如果正在關閉，直接退回，不往下執行
+    if (m_isShuttingDown) return;
+
     auto now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<float, std::milli> dt = now - m_lastFrameTime;
     m_lastFrameTime = now;
@@ -67,6 +81,12 @@ void Renderer::RenderFrame() {
     int totalVerts = 0, totalPolys = 0;
 
     m_renderMutex.lock();
+
+    // 拿到鎖之後再次確認，避免在等待鎖的期間 Shutdown 被觸發
+    if (m_isShuttingDown) {
+        m_renderMutex.unlock();
+        return;
+    }
 
     m_ctx.ResetCommandList();
     auto cmdList = m_ctx.GetCommandList();
