@@ -19,16 +19,13 @@
                 <TextBlock Grid.Row="0" Text="Hierarchy" Foreground="#CCCCCC" FontWeight="SemiBold" Margin="12,12,12,8" />
 
                 <TreeView x:Name="HierarchyTree" Grid.Row="1" Background="Transparent"
-                          ItemInvoked="HierarchyTree_ItemInvoked">
+                          ItemInvoked="HierarchyTree_ItemInvoked"
+                          RightTapped="HierarchyTree_RightTapped">
                 </TreeView>
             </Grid>
         </Border>
 
         <Grid Grid.Column="1">
-            <!--
-                Pointer 事件已移至 CameraInputHandler.cs 中用程式碼註冊，
-                不再在 XAML 綁定以避免 code-behind 必須同步實作對應方法。
-            -->
             <SwapChainPanel x:Name="RenderPanel"
                             Loaded="RenderPanel_Loaded"
                             SizeChanged="RenderPanel_SizeChanged"
@@ -42,10 +39,12 @@
             <Button Content="開啟模型" Click="OpenModel_Click"
                     VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16" />
 
-            <Border x:Name="LoadingOverlay" Background="#A0000000" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border x:Name="LoadingOverlay" Background="#A0000000" Visibility="Collapsed"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                     <ProgressRing IsActive="True" Width="80" Height="80" Foreground="White"/>
-                    <TextBlock Text="Loading..." Foreground="White" FontSize="20" FontWeight="Bold" Margin="0,16,0,0" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Loading..." Foreground="White" FontSize="20" FontWeight="Bold"
+                               Margin="0,16,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -59,78 +58,51 @@
 
                 <TextBlock Text="Position (座標)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
                 <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="PosXText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
                 <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="Y:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="PosYText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
                 <Grid Margin="0,0,0,16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="Z:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="PosZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
 
                 <TextBlock Text="Rotation (Euler 度數)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
                 <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="RotXText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
                 <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="Y:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="RotYText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
                 <Grid Margin="0,0,0,16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="Z:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="RotZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
 
                 <TextBlock Text="Scale (縮放)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
                 <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="ScaleXText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
                 <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="Y:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="ScaleYText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
                 <Grid Margin="0,0,0,16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="Z:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="ScaleZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>

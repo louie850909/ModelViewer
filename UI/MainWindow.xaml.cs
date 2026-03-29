@@ -6,41 +6,30 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Threading.Tasks;
 using UI.Input;
 using UI.ViewModels;
 
 namespace UI;
 
-/// <summary>
-/// MainWindow：純 UI 層，只負責事件轉發與 ViewModel 綁定。
-/// </summary>
 public sealed partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
     private CameraInputHandler?    _cameraInput;
 
-    // TreeViewNode → NodeItem 映射表
-    private readonly Dictionary<TreeViewNode, NodeItem> _nodeMap = new();
-
-    // 每個模型的根 TreeViewNode 清單，用於倇除模型時清除
+    private readonly Dictionary<TreeViewNode, NodeItem> _nodeMap      = new();
     private readonly Dictionary<int, List<TreeViewNode>> _meshRootNodes = new();
 
     public MainWindow()
     {
         InitializeComponent();
         _vm = new MainViewModel();
-
         _vm.Hierarchy.OnNodeSelected += OnNodeSelected;
-
         _vm.IsLoadingChanged += isLoading =>
             LoadingOverlay.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
-
         CompositionTarget.Rendering += OnGameLoopTick;
     }
 
     // ── GameLoop ─────────────────────────────────────────
-
     private void OnGameLoopTick(object? sender, object e)
     {
         if (!_vm.Renderer.IsInitialized) return;
@@ -50,17 +39,14 @@ public sealed partial class MainWindow : Window
     }
 
     // ── Renderer 生命週期 ─────────────────────────────────
-
     private void RenderPanel_Loaded(object sender, RoutedEventArgs e)
     {
         double scale = RenderPanel.XamlRoot.RasterizationScale;
         int w = (int)(RenderPanel.ActualWidth  * scale);
         int h = (int)(RenderPanel.ActualHeight * scale);
         if (w == 0 || h == 0) return;
-
         bool ok = _vm.Renderer.Init(RenderPanel, w, h);
         StatusText.Text = ok ? "DX12 Ready ✓" : "DX12 Init Failed ✗";
-
         if (ok) {
             _vm.Renderer.Resize(RenderPanel.ActualWidth, RenderPanel.ActualHeight, scale);
             _cameraInput = new CameraInputHandler(RenderPanel, _vm.Camera, GetSelectedNodeWorldPosition);
@@ -85,11 +71,9 @@ public sealed partial class MainWindow : Window
         => _vm.Renderer.Shutdown();
 
     // ── 模型載入 ───────────────────────────────────────
-
     private async void OpenModel_Click(object sender, RoutedEventArgs e)
     {
         if (!_vm.Renderer.IsInitialized) return;
-
         var picker = new Windows.Storage.Pickers.FileOpenPicker();
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
@@ -97,7 +81,6 @@ public sealed partial class MainWindow : Window
         picker.FileTypeFilter.Add(".gltf");
         picker.FileTypeFilter.Add(".glb");
         picker.FileTypeFilter.Add(".obj");
-
         var file = await picker.PickSingleFileAsync().AsTask();
         if (file == null) return;
 
@@ -109,29 +92,21 @@ public sealed partial class MainWindow : Window
         AppendMeshToHierarchy(meshId, localCount);
     }
 
-    /// <summary>將指定 meshId 的所有節點追加到 TreeView。</summary>
     private void AppendMeshToHierarchy(int meshId, int localNodeCount)
     {
         _vm.Hierarchy.AddMeshNodes(_vm.Renderer, meshId, localNodeCount);
-
         var meshRoots = new List<TreeViewNode>();
         _meshRootNodes[meshId] = meshRoots;
-
-        var rootsForThisMesh = _vm.Hierarchy.RootNodes
-            .Where(n => n.MeshId == meshId)
-            .ToList();
-
+        var rootsForThisMesh = _vm.Hierarchy.RootNodes.Where(n => n.MeshId == meshId).ToList();
         AppendTreeNodes(rootsForThisMesh, HierarchyTree.RootNodes, meshRoots);
     }
 
-    /// <summary>計算 mesh 屬地 node 數量。</summary>
     private int CountNodesForMesh(int meshId)
     {
-        int count = 0;
+        int count  = 0;
         int stride = UI.Services.RendererService.MeshNodeStride;
         byte[] buf = new byte[256];
-        for (int local = 0; local < stride; local++)
-        {
+        for (int local = 0; local < stride; local++) {
             buf[0] = 0;
             RenderBridge.Renderer_GetNodeInfo(meshId * stride + local, buf, buf.Length, out int _);
             if (buf[0] == 0) break;
@@ -145,8 +120,7 @@ public sealed partial class MainWindow : Window
         IList<TreeViewNode> target,
         List<TreeViewNode>? rootTracker = null)
     {
-        foreach (var item in source)
-        {
+        foreach (var item in source) {
             var node = new TreeViewNode { Content = item.Name, IsExpanded = true };
             _nodeMap[node] = item;
             target.Add(node);
@@ -156,60 +130,95 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // ── Hierarchy 事件 ─────────────────────────────────────
-
+    // ── Hierarchy 選取 ─────────────────────────────────────
     private void HierarchyTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {
         if (args.InvokedItem is TreeViewNode treeNode &&
             _nodeMap.TryGetValue(treeNode, out var nodeItem))
-        {
             _vm.Hierarchy.SelectedNode = nodeItem;
-        }
     }
 
     private void OnNodeSelected(NodeItem? node)
     {
         if (node == null) return;
-        NodeNameText.Text   = _vm.Transform.NodeName;
-        PosXText.Text       = _vm.Transform.PX.ToString("F3");
-        PosYText.Text       = _vm.Transform.PY.ToString("F3");
-        PosZText.Text       = _vm.Transform.PZ.ToString("F3");
-        RotXText.Text       = _vm.Transform.RX.ToString("F3");
-        RotYText.Text       = _vm.Transform.RY.ToString("F3");
-        RotZText.Text       = _vm.Transform.RZ.ToString("F3");
-        ScaleXText.Text     = _vm.Transform.SX.ToString("F3");
-        ScaleYText.Text     = _vm.Transform.SY.ToString("F3");
-        ScaleZText.Text     = _vm.Transform.SZ.ToString("F3");
+        NodeNameText.Text = _vm.Transform.NodeName;
+        PosXText.Text     = _vm.Transform.PX.ToString("F3");
+        PosYText.Text     = _vm.Transform.PY.ToString("F3");
+        PosZText.Text     = _vm.Transform.PZ.ToString("F3");
+        RotXText.Text     = _vm.Transform.RX.ToString("F3");
+        RotYText.Text     = _vm.Transform.RY.ToString("F3");
+        RotZText.Text     = _vm.Transform.RZ.ToString("F3");
+        ScaleXText.Text   = _vm.Transform.SX.ToString("F3");
+        ScaleYText.Text   = _vm.Transform.SY.ToString("F3");
+        ScaleZText.Text   = _vm.Transform.SZ.ToString("F3");
     }
 
-    // ── 右鍵倇除模型 ───────────────────────────────────
+    // ── 右鍵選單倇除 ──────────────────────────────────
 
-    private void HierarchyTreeItem_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    /// <summary>
+    /// 在 TreeView 任意項目上右鍵→從 OriginalSource 往上尋找 TreeViewItem
+    /// →由 _nodeMap 找到 NodeItem →彈出 MenuFlyout。
+    /// </summary>
+    private void HierarchyTree_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        if (sender is not FrameworkElement fe) return;
-        if (fe.DataContext is not TreeViewNode treeNode) return;
-        if (!_nodeMap.TryGetValue(treeNode, out var nodeItem)) return;
-        if (nodeItem.ParentIndex != -1) return; // 只對根節點提供删除
+        // 1. 找到被點擊的 TreeViewItem
+        var hit = e.OriginalSource as DependencyObject;
+        TreeViewItem? tvi = null;
+        while (hit != null) {
+            if (hit is TreeViewItem t) { tvi = t; break; }
+            hit = VisualTreeHelper.GetParent(hit);
+        }
+        if (tvi == null) return;
 
+        // 2. 從 TreeViewItem.DataContext 取得 TreeViewNode
+        if (tvi.DataContext is not TreeViewNode treeNode) return;
+        if (!_nodeMap.TryGetValue(treeNode, out var nodeItem)) return;
+
+        // 3. 先選取該節點，讓 Inspector 同步更新
+        _vm.Hierarchy.SelectedNode = nodeItem;
+
+        // 4. 建立選單
         var flyout = new MenuFlyout();
-        var deleteItem = new MenuFlyoutItem { Text = "删除模型" };
+
+        // 子節點：提示將倇除整個模型
+        if (nodeItem.ParentIndex != -1) {
+            var info = new MenuFlyoutItem {
+                Text       = $"模型：{GetModelRootName(nodeItem.MeshId)}",
+                IsEnabled  = false,
+            };
+            flyout.Items.Add(info);
+            flyout.Items.Add(new MenuFlyoutSeparator());
+        }
+
+        var deleteItem = new MenuFlyoutItem {
+            Text = nodeItem.ParentIndex == -1 ? "切除模型" : "切除整個模型",
+        };
         deleteItem.Click += (_, _) => DeleteModel(nodeItem.MeshId);
         flyout.Items.Add(deleteItem);
-        flyout.ShowAt(fe, e.GetPosition(fe));
+
+        flyout.ShowAt(tvi, e.GetPosition(tvi));
         e.Handled = true;
+    }
+
+    /// <summary>得到指定 meshId 根節點的名稱。</summary>
+    private string GetModelRootName(int meshId)
+    {
+        if (_meshRootNodes.TryGetValue(meshId, out var roots) && roots.Count > 0)
+            return roots[0].Content?.ToString() ?? $"Mesh {meshId}";
+        return $"Mesh {meshId}";
     }
 
     private void DeleteModel(int meshId)
     {
         // 1. C++ 渲染資料
         _vm.Renderer.RemoveModel(meshId);
-        // 2. ViewModel 樹狀
+        // 2. ViewModel
         _vm.Hierarchy.RemoveMeshNodes(meshId);
         // 3. TreeView UI
         if (_meshRootNodes.TryGetValue(meshId, out var roots)) {
             foreach (var r in roots) {
                 HierarchyTree.RootNodes.Remove(r);
-                _nodeMap.Remove(r);
+                RemoveFromNodeMap(r);
             }
             _meshRootNodes.Remove(meshId);
         }
@@ -218,8 +227,15 @@ public sealed partial class MainWindow : Window
             _vm.Hierarchy.SelectedNode = null;
     }
 
-    // ── Transform Inspector ─────────────────────────────────
+    /// <summary>遞迴清除 _nodeMap 內屬於指定樹的所有記錄。</summary>
+    private void RemoveFromNodeMap(TreeViewNode node)
+    {
+        _nodeMap.Remove(node);
+        foreach (var child in node.Children)
+            RemoveFromNodeMap(child);
+    }
 
+    // ── Transform Inspector ─────────────────────────────────
     private void TransformInput_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Enter) ApplyTransform();
@@ -237,8 +253,6 @@ public sealed partial class MainWindow : Window
     }
 
     // ── 工具 ─────────────────────────────────────────────
-
-    // 取得某 meshId 屬下的所有 NodeItem
     private IEnumerable<NodeItem> GetNodesForMesh(int meshId)
         => _nodeMap.Values.Where(n => n.MeshId == meshId);
 }
