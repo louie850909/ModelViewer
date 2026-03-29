@@ -50,7 +50,6 @@ void Renderer::Shutdown() {
 // Scene 管理
 // ---------------------------------------------------------------------------
 int Renderer::AddMesh(std::shared_ptr<Mesh> mesh) {
-    // 儲存新 meshId 並回傳（實際 GPU 上傳由 UploadMeshToGpu 完成）
     return m_nextMeshId++;
 }
 
@@ -88,7 +87,6 @@ bool Renderer::GetNodeInfo(int globalIndex, std::string& outName, int& outParent
     if (!inst) return false;
     const auto& node = inst->mesh->nodes[localIdx];
     outName = node.name;
-    // 將局部 parentIndex 轉換成 globalIndex
     outParentGlobal = (node.parentIndex >= 0)
         ? inst->meshId * MESH_NODE_STRIDE + node.parentIndex
         : -1;
@@ -163,12 +161,10 @@ void Renderer::RenderFrame() {
     m_cmdList->SetGraphicsRootSignature(m_rootSig.Get());
     m_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // 遍走場景內所有模型
     for (auto& inst : m_meshes) {
         auto& mesh = inst.mesh;
         if (!mesh) continue;
 
-        // 計算全域轉換
         std::vector<XMMATRIX> globalTransforms(mesh->nodes.size());
         for (size_t i = 0; i < mesh->nodes.size(); ++i) {
             const auto& node = mesh->nodes[i];
@@ -192,11 +188,17 @@ void Renderer::RenderFrame() {
                 const auto& node = mesh->nodes[n];
                 if (node.subMeshIndices.empty()) continue;
 
-                SceneConstants cb = {};
                 XMMATRIX modelMat = globalTransforms[n];
-                XMStoreFloat4x4(&cb.mvp,          XMMatrixTranspose(modelMat * view * proj));
-                XMStoreFloat4x4(&cb.modelMatrix,  XMMatrixTranspose(modelMat));
-                XMStoreFloat4x4(&cb.normalMatrix, XMMatrixTranspose(XMMatrixInverse(nullptr, modelMat)));
+
+                SceneConstants cb = {};
+                XMStoreFloat4x4(&cb.mvp,         XMMatrixTranspose(modelMat * view * proj));
+                XMStoreFloat4x4(&cb.modelMatrix, XMMatrixTranspose(modelMat));
+
+                // 修正：僅儲存 M^-1（不外加 Transpose）
+                // HLSL 端改為 mul((float3x3)normalMatrix, v.normal)，
+                // 兩者合起來等於對法線套用 (M^-1)^T，即正確的 inverse-transpose。
+                XMStoreFloat4x4(&cb.normalMatrix, XMMatrixInverse(nullptr, modelMat));
+
                 XMStoreFloat3(&cb.lightDir, XMVector3Normalize(forward));
                 cb.baseColor = { 0.8f, 0.6f, 0.4f, 1.0f };
                 cb.cameraPos = m_cameraPos;
@@ -252,7 +254,7 @@ void Renderer::RenderFrame() {
 }
 
 // ---------------------------------------------------------------------------
-// UploadMeshToGpu  (改為 append 语意)
+// UploadMeshToGpu
 // ---------------------------------------------------------------------------
 void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     struct TextureCpuData {
@@ -287,7 +289,6 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
                     for (int c = 0; c < 4; ++c)
                         dst[(y*currW+x)*4+c] = (src[(sy*prevW+sx)*4+c]+src[(sy*prevW+sx1)*4+c]+src[(sy1*prevW+sx)*4+c]+src[(sy1*prevW+sx1)*4+c])/4;
                 }
-            if (pixels != (stbi_uc*)&defaultColor) {} // stbi_image_free 在最後做
         }
         if (pixels != (stbi_uc*)&defaultColor) stbi_image_free(pixels);
         return data;
@@ -302,7 +303,6 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
             0xFF00FF00);
     }
 
-    // --- GPU 上傳 ---
     std::lock_guard<std::mutex> lock(m_renderMutex);
     WaitForGpu();
 
@@ -344,7 +344,6 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     mesh->vbView = { mesh->vertexBuffer->GetGPUVirtualAddress(), (UINT)vbSize, sizeof(Vertex) };
     mesh->ibView = { mesh->indexBuffer->GetGPUVirtualAddress(),  (UINT)ibSize, DXGI_FORMAT_R32_UINT };
 
-    // SRV Heap (每個模型獨立一個 heap)
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
     srvHeapDesc.NumDescriptors = numMaterials * 2;
     srvHeapDesc.Type  = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -394,12 +393,11 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     m_cmdQueue->ExecuteCommandLists(1, cmds);
     WaitForGpu();
 
-    // 安全地 append 到場景
     m_meshes.push_back(std::move(inst));
 }
 
 // ---------------------------------------------------------------------------
-// Camera / Resize / WaitForGpu / CreateXxx  (與原版相同)
+// Camera / Resize / WaitForGpu / CreateXxx
 // ---------------------------------------------------------------------------
 void Renderer::SetCameraTransform(float px, float py, float pz, float pitch, float yaw) {
     std::lock_guard<std::mutex> lock(m_renderMutex);
