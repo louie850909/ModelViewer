@@ -177,8 +177,8 @@ void Renderer::RenderFrame() {
     }
 
     // ==========================================
-        // 轉換 G-Buffer 狀態 (RENDER_TARGET -> SRV)
-        // ==========================================
+    // 轉換 G-Buffer 狀態 (RENDER_TARGET -> SRV)
+    // ==========================================
     D3D12_RESOURCE_BARRIER barriersToSRV[3] = {
         CD3DX12_RESOURCE_BARRIER::Transition(m_gBuffer.GetAlbedo(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
         CD3DX12_RESOURCE_BARRIER::Transition(m_gBuffer.GetNormal(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
@@ -220,6 +220,60 @@ void Renderer::RenderFrame() {
         CD3DX12_RESOURCE_BARRIER::Transition(m_gBuffer.GetWorldPos(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET)
     };
     cmdList->ResourceBarrier(3, barriersToRTV);
+
+    // ==========================================
+    // 通道 3：Forward Pass (處理半透明物件)
+    // ==========================================
+    // 綁定 BackBuffer (RTV) + Geometry Pass 建立好的 Depth Buffer (DSV)
+    cmdList->OMSetRenderTargets(1, &backBufferRTV, FALSE, &dsv);
+
+    cmdList->SetGraphicsRootSignature(m_forwardRootSig.Get());
+    cmdList->SetPipelineState(m_transparentPSO.Get());
+
+    // 繪製 Transparent 物件
+    for (auto& inst : m_scene.GetMeshes()) {
+        auto& mesh = inst.mesh;
+        if (!mesh) continue;
+
+        std::vector<XMMATRIX> globalTransforms(mesh->nodes.size());
+        for (size_t i = 0; i < mesh->nodes.size(); ++i) {
+            const auto& node = mesh->nodes[i];
+            XMMATRIX local = XMMatrixScaling(node.s[0], node.s[1], node.s[2]) * XMMatrixRotationQuaternion(XMVectorSet(node.r[0], node.r[1], node.r[2], node.r[3])) * XMMatrixTranslation(node.t[0], node.t[1], node.t[2]);
+            globalTransforms[i] = (node.parentIndex >= 0) ? local * globalTransforms[node.parentIndex] : local;
+        }
+
+        cmdList->IASetVertexBuffers(0, 1, &mesh->vbView);
+        cmdList->IASetIndexBuffer(&mesh->ibView);
+        ID3D12DescriptorHeap* heaps[] = { inst.srvHeap.Get() };
+        cmdList->SetDescriptorHeaps(1, heaps);
+
+        for (size_t n = 0; n < mesh->nodes.size(); ++n) {
+            const auto& node = mesh->nodes[n];
+            if (node.subMeshIndices.empty()) continue;
+
+            XMMATRIX modelMat = globalTransforms[n];
+            SceneConstants cb = {};
+            XMStoreFloat4x4(&cb.mvp, XMMatrixTranspose(modelMat * view * proj));
+            XMStoreFloat4x4(&cb.modelMatrix, XMMatrixTranspose(modelMat));
+            XMStoreFloat4x4(&cb.normalMatrix, XMMatrixInverse(nullptr, modelMat));
+            XMStoreFloat3(&cb.lightDir, XMVector3Normalize(forward));
+            cb.cameraPos = m_scene.GetCameraPos();
+            cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstants) / 4, &cb, 0);
+
+            for (int subIdx : node.subMeshIndices) {
+                const auto& sub = mesh->subMeshes[subIdx];
+
+                // --- 這裡反過來，只畫半透明物件 ---
+                if (!sub.isTransparent) continue;
+
+                int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < (int)mesh->texturePaths.size()) ? sub.materialIndex : 0;
+                CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(inst.srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, m_srvDescriptorSize);
+                cmdList->SetGraphicsRootDescriptorTable(1, srvHandle);
+                cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
+                currentDrawCalls++;
+            }
+        }
+    }
 
     // 更新統計數據與送出
     m_statVertices.store(totalVerts, std::memory_order_relaxed);
@@ -485,4 +539,52 @@ void Renderer::CreateRootSignaturesAndPSOs() {
     lightPsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     lightPsoDesc.SampleDesc.Count = 1;
     device->CreateGraphicsPipelineState(&lightPsoDesc, IID_PPV_ARGS(&m_lightPSO));
+
+    // ==========================================
+    // 3. Forward Transparent Pass Root Signature & PSO
+    // ==========================================
+    CD3DX12_DESCRIPTOR_RANGE1 fwdSrvRange;
+    fwdSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0); // 貼圖：BaseColor, MR
+    CD3DX12_ROOT_PARAMETER1 fwdParams[2];
+    fwdParams[0].InitAsConstants(sizeof(SceneConstants) / 4, 0);
+    fwdParams[1].InitAsDescriptorTable(1, &fwdSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC fwdRsDesc;
+    fwdRsDesc.Init_1_1(2, fwdParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    D3DX12SerializeVersionedRootSignature(&fwdRsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
+    device->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&m_forwardRootSig));
+
+    ComPtr<ID3DBlob> fwdVS, fwdPS;
+    D3DReadFileToBlob(GetShaderPath(L"ForwardTransparent_VS.cso").c_str(), &fwdVS);
+    D3DReadFileToBlob(GetShaderPath(L"ForwardTransparent_PS.cso").c_str(), &fwdPS);
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC transPsoDesc = geomPsoDesc; // 繼承大部分 Geometry 設定
+    transPsoDesc.pRootSignature = m_forwardRootSig.Get();
+    transPsoDesc.VS = CD3DX12_SHADER_BYTECODE(fwdVS.Get());
+    transPsoDesc.PS = CD3DX12_SHADER_BYTECODE(fwdPS.Get());
+    transPsoDesc.NumRenderTargets = 1; // 只輸出到 BackBuffer
+    transPsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    transPsoDesc.RTVFormats[1] = DXGI_FORMAT_UNKNOWN;
+    transPsoDesc.RTVFormats[2] = DXGI_FORMAT_UNKNOWN;
+
+    // 開啟 Alpha Blending
+    D3D12_RENDER_TARGET_BLEND_DESC blendDesc = {};
+    blendDesc.BlendEnable = TRUE;
+    blendDesc.LogicOpEnable = FALSE;
+    blendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    blendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    blendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+    blendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+    blendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+    blendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    blendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
+    blendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    transPsoDesc.BlendState.RenderTarget[0] = blendDesc;
+
+    // 深度設定：開啟深度測試，但「關閉深度寫入」(唯讀)，避免半透明物件互相遮擋產生破綻
+    transPsoDesc.DepthStencilState.DepthEnable = TRUE;
+    transPsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    transPsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+    device->CreateGraphicsPipelineState(&transPsoDesc, IID_PPV_ARGS(&m_transparentPSO));
 }

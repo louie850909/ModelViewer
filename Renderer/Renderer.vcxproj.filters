@@ -88,5 +88,8 @@
     <CustomBuild Include="shaders\DeferredLight.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
+    <CustomBuild Include="shaders\ForwardTransparent.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>

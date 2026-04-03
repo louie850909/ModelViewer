@@ -50,6 +50,10 @@ private:
     ComPtr<ID3D12RootSignature> m_lightRootSig;
     ComPtr<ID3D12PipelineState> m_lightPSO;
 
+    // Forward Transparent Pass 資源 ---
+    ComPtr<ID3D12RootSignature> m_forwardRootSig;
+    ComPtr<ID3D12PipelineState> m_transparentPSO;
+
     UINT m_srvDescriptorSize = 0;
 
     std::atomic<bool> m_isShuttingDown{ false };
