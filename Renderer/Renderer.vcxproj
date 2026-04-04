@@ -295,6 +295,8 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="shaders\LightDef.hlsli" />
+    <None Include="shaders\PBRCommon.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shaders\BaseColor.hlsl">

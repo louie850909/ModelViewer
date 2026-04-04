@@ -77,6 +77,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="shaders\LightDef.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\PBRCommon.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shaders\BaseColor.hlsl">
