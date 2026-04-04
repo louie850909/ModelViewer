@@ -25,6 +25,9 @@
     <Filter Include="ソース ファイル\Resources">
       <UniqueIdentifier>{aadb2eb4-d430-48a7-a408-4e1ac0455017}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ソース ファイル\RenderPass">
+      <UniqueIdentifier>{fd277546-5092-4b48-b867-752c7d7357c6}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -51,6 +54,18 @@
     <ClInclude Include="GBuffer.h">
       <Filter>ソース ファイル\Resources</Filter>
     </ClInclude>
+    <ClInclude Include="IRenderPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="GeometryPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="DeferredLightPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="ForwardTransparentPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -73,6 +88,15 @@
     </ClCompile>
     <ClCompile Include="GBuffer.cpp">
       <Filter>ソース ファイル\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="GeometryPass.cpp">
+      <Filter>ソース ファイル\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="DeferredLightPass.cpp">
+      <Filter>ソース ファイル\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="ForwardTransparentPass.cpp">
+      <Filter>ソース ファイル\RenderPass</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

@@ -270,18 +270,25 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="DeferredLightPass.h" />
+    <ClInclude Include="ForwardTransparentPass.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="GBuffer.h" />
+    <ClInclude Include="GeometryPass.h" />
     <ClInclude Include="GraphicsContext.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="MeshLoader.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Renderer.h" />
+    <ClInclude Include="IRenderPass.h" />
     <ClInclude Include="Scene.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="DeferredLightPass.cpp" />
     <ClCompile Include="export.cpp" />
+    <ClCompile Include="ForwardTransparentPass.cpp" />
     <ClCompile Include="GBuffer.cpp" />
+    <ClCompile Include="GeometryPass.cpp" />
     <ClCompile Include="GraphicsContext.cpp" />
     <ClCompile Include="MeshLoader.cpp" />
     <ClCompile Include="pch.cpp">
