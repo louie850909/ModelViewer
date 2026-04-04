@@ -38,13 +38,9 @@ public sealed partial class DragNumberLabel : UserControl
     public DragNumberLabel()
     {
         InitializeComponent();
-        Loaded += OnLoaded;
-    }
-
-    private void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        // 顯示左右調整游標，給使用者視覺提示
-        LabelText.ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+        // ProtectedCursor 只能在繼承自 UIElement 的類別自身上設定，
+        // 必須通過 this (即 UserControl 本身) 設定，不能經由內部子控件 reference。
+        ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
