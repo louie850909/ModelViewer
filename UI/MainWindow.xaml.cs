@@ -30,25 +30,30 @@ public sealed partial class MainWindow : Window
             LoadingOverlay.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
         CompositionTarget.Rendering += OnGameLoopTick;
 
-        // ── 綁定 DragNumberLabel ────────────────────────────────────────────────────
-        BindDragLabel(DragPosX,   PosXText,   () => _vm.Transform.PX, 0.01f);
-        BindDragLabel(DragPosY,   PosYText,   () => _vm.Transform.PY, 0.01f);
-        BindDragLabel(DragPosZ,   PosZText,   () => _vm.Transform.PZ, 0.01f);
-        BindDragLabel(DragRotX,   RotXText,   () => _vm.Transform.RX, 0.5f);
-        BindDragLabel(DragRotY,   RotYText,   () => _vm.Transform.RY, 0.5f);
-        BindDragLabel(DragRotZ,   RotZText,   () => _vm.Transform.RZ, 0.5f);
-        BindDragLabel(DragScaleX, ScaleXText, () => _vm.Transform.SX, 0.005f);
-        BindDragLabel(DragScaleY, ScaleYText, () => _vm.Transform.SY, 0.005f);
-        BindDragLabel(DragScaleZ, ScaleZText, () => _vm.Transform.SZ, 0.005f);
+        // ── 綁定 DragNumberLabel ──────────────────────────────────────────────
+        // drag callback 直接寫入 ViewModel 屬性 + 設 IsDirty，
+        // 不將呼叫 TryApplyFromStrings（會 parse 字串 + 对 C++ 寫入）。
+        // GameLoop Tick() 每幀自動核查 IsDirty 再同步一次即可。
+        BindDragLabel(DragPosX,   PosXText,   v => { _vm.Transform.PX = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.PX,   0.01f);
+        BindDragLabel(DragPosY,   PosYText,   v => { _vm.Transform.PY = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.PY,   0.01f);
+        BindDragLabel(DragPosZ,   PosZText,   v => { _vm.Transform.PZ = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.PZ,   0.01f);
+        BindDragLabel(DragRotX,   RotXText,   v => { _vm.Transform.RX = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.RX,   0.5f);
+        BindDragLabel(DragRotY,   RotYText,   v => { _vm.Transform.RY = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.RY,   0.5f);
+        BindDragLabel(DragRotZ,   RotZText,   v => { _vm.Transform.RZ = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.RZ,   0.5f);
+        BindDragLabel(DragScaleX, ScaleXText, v => { _vm.Transform.SX = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.SX, 0.005f);
+        BindDragLabel(DragScaleY, ScaleYText, v => { _vm.Transform.SY = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.SY, 0.005f);
+        BindDragLabel(DragScaleZ, ScaleZText, v => { _vm.Transform.SZ = v; _vm.Transform.IsDirty_Set(); }, () => _vm.Transform.SZ, 0.005f);
     }
 
     /// <summary>
-    /// 將一個 DragNumberLabel 與目標 TextBox 綁定：
-    /// 拖曳 Label → 更新 TextBox 文字 → 呼叫 ApplyTransform。
+    /// 將 DragNumberLabel 與 TextBox 綁定。
+    /// drag 時：呼叫 setVmValue 直接寫 VM + 只更新 TextBox 文字（不 parse，不丸可 renderer）。
+    /// 每幀由 GameLoop Tick() 核查 IsDirty 再批次寫入一次。
     /// </summary>
-    private void BindDragLabel(
+    private static void BindDragLabel(
         DragNumberLabel label,
         TextBox target,
+        Action<float> setVmValue,
         Func<float> getValue,
         float sensitivity)
     {
@@ -56,8 +61,8 @@ public sealed partial class MainWindow : Window
         label.DragSensitivity = sensitivity;
         label.ValueChanged += newVal =>
         {
-            target.Text = newVal.ToString("F3");
-            ApplyTransform();
+            setVmValue(newVal);                    // 直接寫 ViewModel，不需 parse
+            target.Text = newVal.ToString("F3");  // UI 只更新文字，超快
         };
     }
 
@@ -66,7 +71,7 @@ public sealed partial class MainWindow : Window
     {
         if (!_vm.Renderer.IsInitialized) return;
         _cameraInput?.TickMovement();
-        _vm.Tick();
+        _vm.Tick();  // 內部核查 IsDirty，每幀最多寫入一次
         StatsText.Text = _vm.Stats.DisplayText;
     }
 
@@ -83,8 +88,6 @@ public sealed partial class MainWindow : Window
         {
             _vm.Renderer.Resize(RenderPanel.ActualWidth, RenderPanel.ActualHeight, scale);
             _cameraInput = new CameraInputHandler(RenderPanel, _vm.Camera, GetSelectedNodeWorldPosition);
-
-            // 啟動時預設加入一個 Directional Light
             AddLight(0);
         }
     }
@@ -221,20 +224,15 @@ public sealed partial class MainWindow : Window
         if (tvi == null)
         {
             var addLightFlyout = new MenuFlyout();
-
             var addDirLight = new MenuFlyoutItem { Text = "新增 Directional Light" };
             addDirLight.Click += (_, _) => AddLight(0);
-
             var addPointLight = new MenuFlyoutItem { Text = "新增 Point Light" };
             addPointLight.Click += (_, _) => AddLight(1);
-
             var addSpotLight = new MenuFlyoutItem { Text = "新增 Spot Light" };
             addSpotLight.Click += (_, _) => AddLight(2);
-
             addLightFlyout.Items.Add(addDirLight);
             addLightFlyout.Items.Add(addPointLight);
             addLightFlyout.Items.Add(addSpotLight);
-
             addLightFlyout.ShowAt(HierarchyTree, e.GetPosition(HierarchyTree));
             e.Handled = true;
             return;
@@ -245,7 +243,6 @@ public sealed partial class MainWindow : Window
         if (!_nodeMap.TryGetValue(treeNode, out var nodeItem)) return;
 
         _vm.Hierarchy.SelectedNode = nodeItem;
-
         var flyout = new MenuFlyout();
 
         if (nodeItem.IsLight)
@@ -265,7 +262,6 @@ public sealed partial class MainWindow : Window
                 });
                 flyout.Items.Add(new MenuFlyoutSeparator());
             }
-
             var deleteItem = new MenuFlyoutItem
             {
                 Text = nodeItem.ParentIndex == -1 ? "切除模型" : "切除整個模型",
@@ -309,14 +305,13 @@ public sealed partial class MainWindow : Window
             RemoveFromNodeMap(child);
     }
 
-    // ── 光源特定進入難 ─────────────────────────────────────────────────────────
+    // ── 光源 ────────────────────────────────────────────────────────────────────
     private void AddLight(int type)
     {
         int id = _vm.Renderer.AddLight(type);
         string[] names = { "Directional Light", "Point Light", "Spot Light" };
         var item = new NodeItem { Name = names[type], IsLight = true, LightId = id, LightType = type, ParentIndex = -1 };
         _vm.Hierarchy.RootNodes.Add(item);
-
         var node = new TreeViewNode { Content = item.Name, IsExpanded = true };
         _nodeMap[node] = item;
         HierarchyTree.RootNodes.Add(node);
@@ -326,25 +321,21 @@ public sealed partial class MainWindow : Window
     {
         _vm.Renderer.RemoveLight(node.LightId);
         _vm.Hierarchy.RootNodes.Remove(node);
-
         var toRemove = HierarchyTree.RootNodes.FirstOrDefault(n => _nodeMap.ContainsKey(n) && _nodeMap[n] == node);
         if (toRemove != null)
         {
             HierarchyTree.RootNodes.Remove(toRemove);
             _nodeMap.Remove(toRemove);
         }
-
         if (_vm.Hierarchy.SelectedNode == node)
             _vm.Hierarchy.SelectedNode = null;
     }
 
     private void LightInput_LostFocus(object sender, RoutedEventArgs e) => ApplyLight();
-
     private void LightInput_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == VirtualKey.Enter) ApplyLight();
     }
-
     private void ApplyLight()
     {
         if (float.TryParse(LightRText.Text, out float r)) _vm.Transform.ColorR = r;
@@ -360,10 +351,8 @@ public sealed partial class MainWindow : Window
     {
         if (e.Key == VirtualKey.Enter) ApplyTransform();
     }
-
     private void TransformInput_LostFocus(object sender, RoutedEventArgs e)
         => ApplyTransform();
-
     private void ApplyTransform()
     {
         _vm.Transform.TryApplyFromStrings(

@@ -24,7 +24,11 @@ public sealed partial class DragNumberLabel : UserControl
     /// <summary>每 1 pixel 拖移對應的數值變化量。</summary>
     public float DragSensitivity { get; set; } = 0.1f;
 
-    /// <summary>拖移時回呼，回傳新數值供外部更新 TextBox。</summary>
+    /// <summary>
+    /// 拖移時回呼。
+    /// arg1 = 新數值（直接寫入 ViewModel）
+    /// 不需再呼叫 ApplyTransform，GameLoop 的 Tick() 每幀自動同步。
+    /// </summary>
     public event Action<float>? ValueChanged;
 
     /// <summary>拖曳開始前由外部提供目前數值。</summary>
@@ -38,8 +42,6 @@ public sealed partial class DragNumberLabel : UserControl
     public DragNumberLabel()
     {
         InitializeComponent();
-        // ProtectedCursor 只能在繼承自 UIElement 的類別自身上設定，
-        // 必須通過 this (即 UserControl 本身) 設定，不能經由內部子控件 reference。
         ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
     }
 
@@ -61,6 +63,8 @@ public sealed partial class DragNumberLabel : UserControl
 
         float currentX = (float)e.GetCurrentPoint(null).Position.X;
         float delta = (currentX - _dragStartX) * DragSensitivity;
+        // 只發出新數值，由外部直接寫入 ViewModel。
+        // 不在這裡呼叫 renderer，避免每個 PointerMoved 都 stall。
         ValueChanged?.Invoke(_valueAtDragStart + delta);
         e.Handled = true;
     }
