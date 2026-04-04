@@ -65,3 +65,23 @@ bool Scene::SetNodeTransform(int globalIndex, const float* inT, const float* inR
     if (inS) { node.s[0] = inS[0]; node.s[1] = inS[1]; node.s[2] = inS[2]; }
     return true;
 }
+
+int Scene::AddLight(int type) {
+    LightNode l;
+    l.id = m_nextLightId++;
+    l.type = type;
+    m_lights.push_back(l);
+    return l.id;
+}
+
+void Scene::RemoveLight(int id) {
+    m_lights.erase(std::remove_if(m_lights.begin(), m_lights.end(),
+        [id](const LightNode& l) { return l.id == id; }), m_lights.end());
+}
+
+LightNode* Scene::GetLight(int id) {
+    for (auto& l : m_lights) {
+        if (l.id == id) return &l;
+    }
+    return nullptr;
+}

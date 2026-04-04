@@ -56,24 +56,8 @@ float4 PSMain(VSOutput v) : SV_TARGET
 
     float3 N = normalize(v.normal);
     float3 V = normalize(cameraPos - v.worldPos);
-    float3 L = normalize(-lightDir);
-    float3 H = normalize(V + L);
-
-    float NdotL = max(dot(N, L), 0.0);
-
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedoTex.rgb, metallic);
-
-    float NDF = DistributionGGX(N, H, roughness);
-    float G = GeometrySmith(N, V, L, roughness);
-    float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    float3 numerator = NDF * G * F;
-    float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL;
-    float3 specular = numerator / max(denominator, 0.001);
-
-    float3 kD = (float3(1.0, 1.0, 1.0) - F) * (1.0 - metallic);
-
-    float3 radiance = float3(3.0, 3.0, 3.0);
+    
     float3 Lo = float3(0, 0, 0);
     for (int i = 0; i < numLights; i++)
     {

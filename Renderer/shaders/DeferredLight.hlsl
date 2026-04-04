@@ -50,24 +50,8 @@ float4 PSMain(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
     float3 N = normalize(normalMetal.rgb);
     float metallic = normalMetal.a;
     float3 P = worldPos.xyz;
-
     float3 V = normalize(cameraPos - P);
-    float3 L = normalize(-lightDir); // 注意方向
-    float3 H = normalize(V + L);
-
-    float NdotL = max(dot(N, L), 0.0);
-
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo.rgb, metallic);
-
-    float NDF = DistributionGGX(N, H, roughness);
-    float G = GeometrySmith(N, V, L, roughness);
-    float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    float3 numerator = NDF * G * F;
-    float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL;
-    float3 specular = numerator / max(denominator, 0.001);
-
-    float3 kD = (float3(1.0, 1.0, 1.0) - F) * (1.0 - metallic);
 
     float3 radiance = float3(3.0, 3.0, 3.0);
     float3 Lo = float3(0, 0, 0);

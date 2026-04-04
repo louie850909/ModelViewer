@@ -35,12 +35,31 @@ public:
     bool SetNodeTransform(int globalIndex, const float* inT, const float* inR, const float* inS) { return m_scene.SetNodeTransform(globalIndex, inT, inR, inS); }
     std::shared_ptr<Mesh> GetMesh() const { return m_scene.GetMesh(); }
 
+	// Light API 委派給 Scene
+    int AddLight(int type) { return m_scene.AddLight(type); }
+    void RemoveLight(int id) { m_scene.RemoveLight(id); }
+	LightNode* GetLight(int id) { return m_scene.GetLight(id); }
+	const std::vector<LightNode>& GetLights() const { return m_scene.GetLights(); }
+
 private:
     void CreateRootSignaturesAndPSOs(); // 改名為複數
 
     GraphicsContext m_ctx;
     Scene m_scene;
     GBuffer m_gBuffer;
+
+    struct LightBufferData {
+        int numLights;
+        float _pad[3];
+        struct Light {
+            int type; float intensity; float coneAngle; float _pad1;
+            float color[3]; float _pad2;
+            float position[3]; float _pad3;
+            float direction[3]; float _pad4;
+        } lights[16]; // 對應 HLSL 中的 16 盞上限
+    };
+    ComPtr<ID3D12Resource> m_lightCB;
+    LightBufferData* m_mappedLightCB = nullptr;
 
     // Geometry Pass 資源
     ComPtr<ID3D12RootSignature> m_geomRootSig;

@@ -14,8 +14,8 @@ internal sealed class RendererService : IDisposable
 {
     public const int MeshNodeStride = 10000;
 
-    private IntPtr _panelPtr   = IntPtr.Zero;
-    private bool   _initialized = false;
+    private IntPtr _panelPtr = IntPtr.Zero;
+    private bool _initialized = false;
     private RenderBridge.AddModelCallback? _addModelCallback;
 
     public bool IsInitialized => _initialized;
@@ -35,7 +35,7 @@ internal sealed class RendererService : IDisposable
     public void Resize(double width, double height, double rasterizationScale)
     {
         if (!_initialized) return;
-        int w = (int)(width  * rasterizationScale);
+        int w = (int)(width * rasterizationScale);
         int h = (int)(height * rasterizationScale);
         if (w > 0 && h > 0) RenderBridge.Renderer_Resize(w, h, (float)rasterizationScale);
     }
@@ -115,7 +115,40 @@ internal sealed class RendererService : IDisposable
         batcher.FlushToCpp(entries);
     }
 
-    // 舊相容
     public int GetNodeCount() =>
         _initialized ? RenderBridge.Renderer_GetNodeCount() : 0;
+
+    // ── 光源管理系統 (Light System) ───────────────────────────────────
+
+    public int AddLight(int type)
+    {
+        if (!_initialized) return -1;
+        return RenderBridge.Renderer_AddLight(type);
+    }
+
+    public void RemoveLight(int id)
+    {
+        if (_initialized) RenderBridge.Renderer_RemoveLight(id);
+    }
+
+    public (int type, float intensity, float coneAngle, float[] color, float[] pos, float[] dir) GetLight(int id)
+    {
+        float[] color = new float[3];
+        float[] pos = new float[3];
+        float[] dir = new float[3];
+
+        if (_initialized && RenderBridge.Renderer_GetLight(id, out int type, out float intensity, out float coneAngle, color, pos, dir))
+        {
+            return (type, intensity, coneAngle, color, pos, dir);
+        }
+
+        // 若找不到光源或尚未初始化，回傳預設安全值
+        return (0, 1.0f, 30.0f, new float[] { 1f, 1f, 1f }, new float[] { 0f, 5f, 0f }, new float[] { 0f, -1f, 0f });
+    }
+
+    public bool SetLight(int id, int type, float intensity, float coneAngle, float[] color, float[] pos, float[] dir)
+    {
+        if (!_initialized) return false;
+        return RenderBridge.Renderer_SetLight(id, type, intensity, coneAngle, color, pos, dir);
+    }
 }

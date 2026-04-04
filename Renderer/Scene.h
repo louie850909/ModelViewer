@@ -16,6 +16,16 @@ struct SceneConstants {
     DirectX::XMFLOAT4   baseColor;
 };
 
+struct LightNode {
+    int id;
+    int type; // 0=Directional, 1=Point, 2=Spot
+    float intensity = 1.0f;
+    float coneAngle = 30.0f;
+    float color[3] = { 1.0f, 1.0f, 1.0f };
+    float position[3] = { 0.0f, 5.0f, 0.0f };
+    float direction[3] = { 0.0f, -1.0f, 0.0f };
+};
+
 struct MeshInstance {
     int meshId = -1;
     std::shared_ptr<Mesh> mesh;
@@ -47,6 +57,11 @@ public:
     bool GetNodeTransform(int globalIndex, float* outT, float* outR, float* outS);
     bool SetNodeTransform(int globalIndex, const float* inT, const float* inR, const float* inS);
 
+    int AddLight(int type);
+    void RemoveLight(int id);
+    LightNode* GetLight(int id);
+    const std::vector<LightNode>& GetLights() const { return m_lights; }
+
     std::shared_ptr<Mesh> GetMesh() const { return m_meshes.empty() ? nullptr : m_meshes[0].mesh; }
     const std::vector<MeshInstance>& GetMeshes() const { return m_meshes; }
 
@@ -58,4 +73,7 @@ private:
     DirectX::XMFLOAT3 m_cameraPos = { 0.0f, 0.0f, -3.0f };
     float m_pitch = 0.0f;
     float m_yaw = 0.0f;
+
+    int m_nextLightId = 0;
+    std::vector<LightNode> m_lights;
 };

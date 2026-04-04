@@ -8,16 +8,17 @@ using System.Linq;
 using System.Numerics;
 using UI.Input;
 using UI.ViewModels;
+using Windows.System;
 
 namespace UI;
 
 public sealed partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
-    private CameraInputHandler?    _cameraInput;
+    private CameraInputHandler? _cameraInput;
 
-    private readonly Dictionary<TreeViewNode, NodeItem>   _nodeMap       = new();
-    private readonly Dictionary<int, List<TreeViewNode>>  _meshRootNodes = new();
+    private readonly Dictionary<TreeViewNode, NodeItem> _nodeMap = new();
+    private readonly Dictionary<int, List<TreeViewNode>> _meshRootNodes = new();
 
     public MainWindow()
     {
@@ -42,14 +43,18 @@ public sealed partial class MainWindow : Window
     private void RenderPanel_Loaded(object sender, RoutedEventArgs e)
     {
         double scale = RenderPanel.XamlRoot.RasterizationScale;
-        int w = (int)(RenderPanel.ActualWidth  * scale);
+        int w = (int)(RenderPanel.ActualWidth * scale);
         int h = (int)(RenderPanel.ActualHeight * scale);
         if (w == 0 || h == 0) return;
         bool ok = _vm.Renderer.Init(RenderPanel, w, h);
         StatusText.Text = ok ? "DX12 Ready ✓" : "DX12 Init Failed ✗";
-        if (ok) {
+        if (ok)
+        {
             _vm.Renderer.Resize(RenderPanel.ActualWidth, RenderPanel.ActualHeight, scale);
             _cameraInput = new CameraInputHandler(RenderPanel, _vm.Camera, GetSelectedNodeWorldPosition);
+
+            // 啟動時預設加入一個 Directional Light
+            AddLight(0);
         }
     }
 
@@ -103,10 +108,11 @@ public sealed partial class MainWindow : Window
 
     private int CountNodesForMesh(int meshId)
     {
-        int count  = 0;
+        int count = 0;
         int stride = UI.Services.RendererService.MeshNodeStride;
         byte[] buf = new byte[256];
-        for (int local = 0; local < stride; local++) {
+        for (int local = 0; local < stride; local++)
+        {
             buf[0] = 0;
             RenderBridge.Renderer_GetNodeInfo(meshId * stride + local, buf, buf.Length, out int _);
             if (buf[0] == 0) break;
@@ -120,7 +126,8 @@ public sealed partial class MainWindow : Window
         IList<TreeViewNode> target,
         List<TreeViewNode>? rootTracker = null)
     {
-        foreach (var item in source) {
+        foreach (var item in source)
+        {
             var node = new TreeViewNode { Content = item.Name, IsExpanded = true };
             _nodeMap[node] = item;
             target.Add(node);
@@ -140,17 +147,34 @@ public sealed partial class MainWindow : Window
 
     private void OnNodeSelected(NodeItem? node)
     {
-        if (node == null) return;
+        if (node == null)
+        {
+            LightSettingsPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
         NodeNameText.Text = _vm.Transform.NodeName;
-        PosXText.Text     = _vm.Transform.PX.ToString("F3");
-        PosYText.Text     = _vm.Transform.PY.ToString("F3");
-        PosZText.Text     = _vm.Transform.PZ.ToString("F3");
-        RotXText.Text     = _vm.Transform.RX.ToString("F3");
-        RotYText.Text     = _vm.Transform.RY.ToString("F3");
-        RotZText.Text     = _vm.Transform.RZ.ToString("F3");
-        ScaleXText.Text   = _vm.Transform.SX.ToString("F3");
-        ScaleYText.Text   = _vm.Transform.SY.ToString("F3");
-        ScaleZText.Text   = _vm.Transform.SZ.ToString("F3");
+        PosXText.Text = _vm.Transform.PX.ToString("F3");
+        PosYText.Text = _vm.Transform.PY.ToString("F3");
+        PosZText.Text = _vm.Transform.PZ.ToString("F3");
+        RotXText.Text = _vm.Transform.RX.ToString("F3");
+        RotYText.Text = _vm.Transform.RY.ToString("F3");
+        RotZText.Text = _vm.Transform.RZ.ToString("F3");
+        ScaleXText.Text = _vm.Transform.SX.ToString("F3");
+        ScaleYText.Text = _vm.Transform.SY.ToString("F3");
+        ScaleZText.Text = _vm.Transform.SZ.ToString("F3");
+
+        // 屬性面板同步：若為光源節點，顯示光源屬性面板並填入數值
+        LightSettingsPanel.Visibility = node.IsLight ? Visibility.Visible : Visibility.Collapsed;
+        if (node.IsLight)
+        {
+            LightRText.Text = _vm.Transform.ColorR.ToString("F3");
+            LightGText.Text = _vm.Transform.ColorG.ToString("F3");
+            LightBText.Text = _vm.Transform.ColorB.ToString("F3");
+            LightIntensityText.Text = _vm.Transform.Intensity.ToString("F3");
+            LightConeText.Text = _vm.Transform.ConeAngle.ToString("F3");
+            ConeAnglePanel.Visibility = node.LightType == 2 ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     // ── 右鍵選單 ───────────────────────────────────────
@@ -160,14 +184,36 @@ public sealed partial class MainWindow : Window
         // 1. 從 OriginalSource 往上尋找 TreeViewItem
         var hit = e.OriginalSource as DependencyObject;
         TreeViewItem? tvi = null;
-        while (hit != null) {
+        while (hit != null)
+        {
             if (hit is TreeViewItem t) { tvi = t; break; }
             hit = VisualTreeHelper.GetParent(hit);
         }
-        if (tvi == null) return;
 
-        // 2. 重點修正：TreeViewItem.DataContext 是 Content（string）
-        //    必須用 TreeView.NodeFromContainer() 反查 TreeViewNode
+        // 如果點在空白處 (tvi 為 null)，顯示新增光源選單
+        if (tvi == null)
+        {
+            var addLightFlyout = new MenuFlyout();
+
+            var addDirLight = new MenuFlyoutItem { Text = "新增 Directional Light" };
+            addDirLight.Click += (_, _) => AddLight(0);
+
+            var addPointLight = new MenuFlyoutItem { Text = "新增 Point Light" };
+            addPointLight.Click += (_, _) => AddLight(1);
+
+            var addSpotLight = new MenuFlyoutItem { Text = "新增 Spot Light" };
+            addSpotLight.Click += (_, _) => AddLight(2);
+
+            addLightFlyout.Items.Add(addDirLight);
+            addLightFlyout.Items.Add(addPointLight);
+            addLightFlyout.Items.Add(addSpotLight);
+
+            addLightFlyout.ShowAt(HierarchyTree, e.GetPosition(HierarchyTree));
+            e.Handled = true;
+            return;
+        }
+
+        // 2. 透過 TreeViewItem 反查 TreeViewNode
         var treeNode = HierarchyTree.NodeFromContainer(tvi);
         if (treeNode == null) return;
         if (!_nodeMap.TryGetValue(treeNode, out var nodeItem)) return;
@@ -175,22 +221,34 @@ public sealed partial class MainWindow : Window
         // 3. 選取該節點
         _vm.Hierarchy.SelectedNode = nodeItem;
 
-        // 4. 建立選單
+        // 4. 建立節點特定選單
         var flyout = new MenuFlyout();
 
-        if (nodeItem.ParentIndex != -1) {
-            flyout.Items.Add(new MenuFlyoutItem {
-                Text      = $"模型：{GetModelRootName(nodeItem.MeshId)}",
-                IsEnabled = false,
-            });
-            flyout.Items.Add(new MenuFlyoutSeparator());
+        if (nodeItem.IsLight)
+        {
+            var deleteLightItem = new MenuFlyoutItem { Text = "刪除光源" };
+            deleteLightItem.Click += (_, _) => DeleteLight(nodeItem);
+            flyout.Items.Add(deleteLightItem);
         }
+        else
+        {
+            if (nodeItem.ParentIndex != -1)
+            {
+                flyout.Items.Add(new MenuFlyoutItem
+                {
+                    Text = $"模型：{GetModelRootName(nodeItem.MeshId)}",
+                    IsEnabled = false,
+                });
+                flyout.Items.Add(new MenuFlyoutSeparator());
+            }
 
-        var deleteItem = new MenuFlyoutItem {
-            Text = nodeItem.ParentIndex == -1 ? "切除模型" : "切除整個模型",
-        };
-        deleteItem.Click += (_, _) => DeleteModel(nodeItem.MeshId);
-        flyout.Items.Add(deleteItem);
+            var deleteItem = new MenuFlyoutItem
+            {
+                Text = nodeItem.ParentIndex == -1 ? "切除模型" : "切除整個模型",
+            };
+            deleteItem.Click += (_, _) => DeleteModel(nodeItem.MeshId);
+            flyout.Items.Add(deleteItem);
+        }
 
         flyout.ShowAt(tvi, e.GetPosition(tvi));
         e.Handled = true;
@@ -207,8 +265,10 @@ public sealed partial class MainWindow : Window
     {
         _vm.Renderer.RemoveModel(meshId);
         _vm.Hierarchy.RemoveMeshNodes(meshId);
-        if (_meshRootNodes.TryGetValue(meshId, out var roots)) {
-            foreach (var r in roots) {
+        if (_meshRootNodes.TryGetValue(meshId, out var roots))
+        {
+            foreach (var r in roots)
+            {
                 HierarchyTree.RootNodes.Remove(r);
                 RemoveFromNodeMap(r);
             }
@@ -225,10 +285,57 @@ public sealed partial class MainWindow : Window
             RemoveFromNodeMap(child);
     }
 
+    // ── 光源特定邏輯 ─────────────────────────────────────
+
+    private void AddLight(int type)
+    {
+        int id = _vm.Renderer.AddLight(type);
+        string[] names = { "Directional Light", "Point Light", "Spot Light" };
+        var item = new NodeItem { Name = names[type], IsLight = true, LightId = id, LightType = type, ParentIndex = -1 };
+        _vm.Hierarchy.RootNodes.Add(item);
+
+        var node = new TreeViewNode { Content = item.Name, IsExpanded = true };
+        _nodeMap[node] = item;
+        HierarchyTree.RootNodes.Add(node);
+    }
+
+    private void DeleteLight(NodeItem node)
+    {
+        _vm.Renderer.RemoveLight(node.LightId);
+        _vm.Hierarchy.RootNodes.Remove(node);
+
+        var toRemove = HierarchyTree.RootNodes.FirstOrDefault(n => _nodeMap.ContainsKey(n) && _nodeMap[n] == node);
+        if (toRemove != null)
+        {
+            HierarchyTree.RootNodes.Remove(toRemove);
+            _nodeMap.Remove(toRemove);
+        }
+
+        if (_vm.Hierarchy.SelectedNode == node)
+            _vm.Hierarchy.SelectedNode = null;
+    }
+
+    private void LightInput_LostFocus(object sender, RoutedEventArgs e) => ApplyLight();
+
+    private void LightInput_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Enter) ApplyLight();
+    }
+
+    private void ApplyLight()
+    {
+        if (float.TryParse(LightRText.Text, out float r)) _vm.Transform.ColorR = r;
+        if (float.TryParse(LightGText.Text, out float g)) _vm.Transform.ColorG = g;
+        if (float.TryParse(LightBText.Text, out float b)) _vm.Transform.ColorB = b;
+        if (float.TryParse(LightIntensityText.Text, out float i)) _vm.Transform.Intensity = i;
+        if (float.TryParse(LightConeText.Text, out float c)) _vm.Transform.ConeAngle = c;
+        _vm.Transform.Apply();
+    }
+
     // ── Transform Inspector ─────────────────────────────────
     private void TransformInput_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == Windows.System.VirtualKey.Enter) ApplyTransform();
+        if (e.Key == VirtualKey.Enter) ApplyTransform();
     }
 
     private void TransformInput_LostFocus(object sender, RoutedEventArgs e)
@@ -237,8 +344,8 @@ public sealed partial class MainWindow : Window
     private void ApplyTransform()
     {
         _vm.Transform.TryApplyFromStrings(
-            PosXText.Text,   PosYText.Text,   PosZText.Text,
-            RotXText.Text,   RotYText.Text,   RotZText.Text,
+            PosXText.Text, PosYText.Text, PosZText.Text,
+            RotXText.Text, RotYText.Text, RotZText.Text,
             ScaleXText.Text, ScaleYText.Text, ScaleZText.Text);
     }
 

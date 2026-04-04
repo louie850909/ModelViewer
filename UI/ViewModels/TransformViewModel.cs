@@ -33,6 +33,16 @@ internal sealed class TransformViewModel : ObservableObject
     public float SY { get => _sy; set => SetProperty(ref _sy, value); }
     public float SZ { get => _sz; set => SetProperty(ref _sz, value); }
 
+    // ── Light Properties ─────────────────────────────────
+    private float _colorR = 1f, _colorG = 1f, _colorB = 1f;
+    public float ColorR { get => _colorR; set => SetProperty(ref _colorR, value); }
+    public float ColorG { get => _colorG; set => SetProperty(ref _colorG, value); }
+    public float ColorB { get => _colorB; set => SetProperty(ref _colorB, value); }
+
+    private float _intensity = 1f, _coneAngle = 30f;
+    public float Intensity { get => _intensity; set => SetProperty(ref _intensity, value); }
+    public float ConeAngle { get => _coneAngle; set => SetProperty(ref _coneAngle, value); }
+
     private string _nodeName = string.Empty;
     public string NodeName { get => _nodeName; private set => SetProperty(ref _nodeName, value); }
 
@@ -45,23 +55,45 @@ internal sealed class TransformViewModel : ObservableObject
     /// <summary>儱除 dirty flag，由 MainViewModel.Tick() 在刷入完成後呼叫。</summary>
     public void ClearDirty() => IsDirty = false;
 
+    private NodeItem? _currentNode;
+
     // ── 公開操作 ─────────────────────────────────
 
     public void LoadNode(NodeItem? node)
     {
-        if (node == null) { _nodeIndex = -1; NodeName = string.Empty; return; }
+        _currentNode = node;
+        if (node == null) { NodeName = string.Empty; return; }
+        NodeName = node.Name;
 
-        _nodeIndex = node.GlobalIndex; // 使用 globalIndex
-        NodeName   = node.Name;
+        if (node.IsLight)
+        {
+            var (t, i, c, col, p, d) = _renderer.GetLight(node.LightId);
+            PX = p[0]; PY = p[1]; PZ = p[2];
+            // Direction 轉 Euler
+            Vector3 dir = Vector3.Normalize(new Vector3(d[0], d[1], d[2]));
+            RX = (float)(Math.Asin(-dir.Y) * 180 / Math.PI);
+            RY = (float)(Math.Atan2(dir.X, dir.Z) * 180 / Math.PI);
+            RZ = 0; SX = 1; SY = 1; SZ = 1;
+            ColorR = col[0]; ColorG = col[1]; ColorB = col[2];
+            Intensity = i; ConeAngle = c;
+            IsDirty = false;
+        }
+        else
+        {
+            if (node == null) { _nodeIndex = -1; NodeName = string.Empty; return; }
 
-        var (t, r, s) = _renderer.GetNodeTransform(_nodeIndex);
-        PX = t[0]; PY = t[1]; PZ = t[2];
-        SX = s[0]; SY = s[1]; SZ = s[2];
+            _nodeIndex = node.GlobalIndex; // 使用 globalIndex
+            NodeName = node.Name;
 
-        var euler = QuatToEulerDeg(new Quaternion(r[0], r[1], r[2], r[3]));
-        RX = euler.X; RY = euler.Y; RZ = euler.Z;
+            var (t, r, s) = _renderer.GetNodeTransform(_nodeIndex);
+            PX = t[0]; PY = t[1]; PZ = t[2];
+            SX = s[0]; SY = s[1]; SZ = s[2];
 
-        IsDirty = false;
+            var euler = QuatToEulerDeg(new Quaternion(r[0], r[1], r[2], r[3]));
+            RX = euler.X; RY = euler.Y; RZ = euler.Z;
+
+            IsDirty = false;
+        }
     }
 
     /// <summary>
@@ -84,19 +116,19 @@ internal sealed class TransformViewModel : ObservableObject
     /// <summary>將目前 VM 屬性立即寫回 C++（單點並設為 dirty）。</summary>
     public void Apply()
     {
-        if (_nodeIndex < 0) return;
-        IsDirty = true;
-
-        float[] t = { PX, PY, PZ };
-        float[] s = { SX, SY, SZ };
-
-        float pitch = RX * (float)(Math.PI / 180.0);
-        float yaw   = RY * (float)(Math.PI / 180.0);
-        float roll  = RZ * (float)(Math.PI / 180.0);
-        Quaternion q = Quaternion.CreateFromYawPitchRoll(yaw, pitch, roll);
-        float[] r = { q.X, q.Y, q.Z, q.W };
-
-        _renderer.SetNodeTransform(_nodeIndex, t, r, s);
+        if (_currentNode == null) return;
+        if (_currentNode.IsLight)
+        {
+            float pitch = RX * (float)(Math.PI / 180.0);
+            float yaw = RY * (float)(Math.PI / 180.0);
+            Vector3 dir = Vector3.Transform(Vector3.UnitZ, Matrix4x4.CreateFromYawPitchRoll(yaw, pitch, 0));
+            _renderer.SetLight(_currentNode.LightId, _currentNode.LightType, Intensity, ConeAngle,
+                new[] { ColorR, ColorG, ColorB }, new[] { PX, PY, PZ }, new[] { dir.X, dir.Y, dir.Z });
+        }
+        else
+        {
+            IsDirty = true;
+        }
     }
 
     public bool TryApplyFromStrings(

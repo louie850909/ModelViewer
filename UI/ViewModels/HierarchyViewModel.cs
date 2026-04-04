@@ -18,6 +18,9 @@ internal sealed class NodeItem
     public int    CppIndex    { get; init; }  // 舊相容，等於 GlobalIndex
     public int    ParentIndex { get; init; }  // parent GlobalIndex，-1 為根
     public ObservableCollection<NodeItem> Children { get; } = new();
+    public bool IsLight { get; init; } = false;
+    public int LightId { get; init; } = -1;
+    public int LightType { get; init; } = 0;
 }
 
 /// <summary>

@@ -22,6 +22,11 @@ bool Renderer::Init(IUnknown* panelUnknown, int width, int height) {
     try {
         if (!m_ctx.Init(panelUnknown, width, height)) return false;
 
+        auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        auto cbDesc = CD3DX12_RESOURCE_DESC::Buffer((sizeof(LightBufferData) + 255) & ~255);
+        m_ctx.GetDevice()->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &cbDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_lightCB));
+        m_lightCB->Map(0, nullptr, (void**)&m_mappedLightCB);
+
         CreateRootSignaturesAndPSOs();
         m_srvDescriptorSize = m_ctx.GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         m_gBuffer.Init(m_ctx.GetDevice(), width, height);
@@ -81,6 +86,24 @@ void Renderer::RenderFrame() {
     int totalVerts = 0, totalPolys = 0;
 
     m_renderMutex.lock();
+
+    // 更新光源資料
+    m_mappedLightCB->numLights = (int)m_scene.GetLights().size();
+    for (size_t i = 0; i < m_scene.GetLights().size() && i < 16; ++i) {
+        const auto& l = m_scene.GetLights()[i];
+        m_mappedLightCB->lights[i].type = l.type;
+        m_mappedLightCB->lights[i].intensity = l.intensity;
+        m_mappedLightCB->lights[i].coneAngle = l.coneAngle;
+        m_mappedLightCB->lights[i].color[0] = l.color[0];
+        m_mappedLightCB->lights[i].color[1] = l.color[1];
+        m_mappedLightCB->lights[i].color[2] = l.color[2];
+        m_mappedLightCB->lights[i].position[0] = l.position[0];
+        m_mappedLightCB->lights[i].position[1] = l.position[1];
+        m_mappedLightCB->lights[i].position[2] = l.position[2];
+        m_mappedLightCB->lights[i].direction[0] = l.direction[0];
+        m_mappedLightCB->lights[i].direction[1] = l.direction[1];
+        m_mappedLightCB->lights[i].direction[2] = l.direction[2];
+    }
 
     // 拿到鎖之後再次確認，避免在等待鎖的期間 Shutdown 被觸發
     if (m_isShuttingDown) {
@@ -204,7 +227,7 @@ void Renderer::RenderFrame() {
     lightCb.cameraPos = m_scene.GetCameraPos();
     XMStoreFloat3(&lightCb.lightDir, XMVector3Normalize(forward));
     cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstants) / 4, &lightCb, 0);
-
+    cmdList->SetGraphicsRootConstantBufferView(2, m_lightCB->GetGPUVirtualAddress());
     cmdList->SetGraphicsRootDescriptorTable(1, m_gBuffer.GetSrvStart());
 
     // 繪製全螢幕四邊形 (3個頂點產生一個包含整個螢幕的三角形)
@@ -228,6 +251,7 @@ void Renderer::RenderFrame() {
     cmdList->OMSetRenderTargets(1, &backBufferRTV, FALSE, &dsv);
 
     cmdList->SetGraphicsRootSignature(m_forwardRootSig.Get());
+    cmdList->SetGraphicsRootConstantBufferView(2, m_lightCB->GetGPUVirtualAddress());
     cmdList->SetPipelineState(m_transparentPSO.Get());
 
     // 繪製 Transparent 物件
@@ -506,15 +530,16 @@ void Renderer::CreateRootSignaturesAndPSOs() {
     // ==========================================
     CD3DX12_DESCRIPTOR_RANGE1 lightSrvRange;
     lightSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0); // 讀取 3 張 G-Buffer
-    CD3DX12_ROOT_PARAMETER1 lightParams[2];
+    CD3DX12_ROOT_PARAMETER1 lightParams[3];
     lightParams[0].InitAsConstants(sizeof(SceneConstants) / 4, 0);
     lightParams[1].InitAsDescriptorTable(1, &lightSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    lightParams[2].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL); // 綁定 b1
 
     CD3DX12_STATIC_SAMPLER_DESC lightSampler(0, D3D12_FILTER_MIN_MAG_MIP_POINT);
     lightSampler.AddressU = lightSampler.AddressV = lightSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC lightRsDesc;
-    lightRsDesc.Init_1_1(2, lightParams, 1, &lightSampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    lightRsDesc.Init_1_1(3, lightParams, 1, &lightSampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
     D3DX12SerializeVersionedRootSignature(&lightRsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
     device->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&m_lightRootSig));
 
@@ -545,12 +570,13 @@ void Renderer::CreateRootSignaturesAndPSOs() {
     // ==========================================
     CD3DX12_DESCRIPTOR_RANGE1 fwdSrvRange;
     fwdSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0); // 貼圖：BaseColor, MR
-    CD3DX12_ROOT_PARAMETER1 fwdParams[2];
+    CD3DX12_ROOT_PARAMETER1 fwdParams[3];
     fwdParams[0].InitAsConstants(sizeof(SceneConstants) / 4, 0);
     fwdParams[1].InitAsDescriptorTable(1, &fwdSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    fwdParams[2].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL); // 綁定 b1
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC fwdRsDesc;
-    fwdRsDesc.Init_1_1(2, fwdParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    fwdRsDesc.Init_1_1(3, fwdParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
     D3DX12SerializeVersionedRootSignature(&fwdRsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
     device->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&m_forwardRootSig));
 

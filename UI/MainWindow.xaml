@@ -106,6 +106,25 @@
                     <TextBlock Text="Z:" VerticalAlignment="Center" Foreground="#888888"/>
                     <TextBox x:Name="ScaleZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
+                <StackPanel x:Name="LightSettingsPanel" Visibility="Collapsed" Margin="0,16,0,0">
+                    <TextBlock Text="Color (RGB 0~1)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="LightRText" Margin="0,0,2,0" LostFocus="LightInput_LostFocus" KeyDown="LightInput_KeyDown"/>
+                        <TextBox x:Name="LightGText" Grid.Column="1" Margin="2,0,2,0" LostFocus="LightInput_LostFocus" KeyDown="LightInput_KeyDown"/>
+                        <TextBox x:Name="LightBText" Grid.Column="2" Margin="2,0,0,0" LostFocus="LightInput_LostFocus" KeyDown="LightInput_KeyDown"/>
+                    </Grid>
+                    <TextBlock Text="Intensity" Foreground="#888888" FontSize="12" Margin="0,8,0,4"/>
+                    <TextBox x:Name="LightIntensityText" LostFocus="LightInput_LostFocus" KeyDown="LightInput_KeyDown"/>
+                    <StackPanel x:Name="ConeAnglePanel">
+                        <TextBlock Text="Cone Angle" Foreground="#888888" FontSize="12" Margin="0,8,0,4"/>
+                        <TextBox x:Name="LightConeText" LostFocus="LightInput_LostFocus" KeyDown="LightInput_KeyDown"/>
+                    </StackPanel>
+                </StackPanel>
             </StackPanel>
         </Border>
     </Grid>
