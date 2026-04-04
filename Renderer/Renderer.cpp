@@ -3,6 +3,7 @@
 #include "GeometryPass.h"
 #include "DeferredLightPass.h"
 #include "ForwardTransparentPass.h"
+#include "RayTracingPass.h"
 #include <stdexcept>
 #include <filesystem>
 #include <string>
@@ -33,10 +34,14 @@ bool Renderer::Init(IUnknown* panelUnknown, int width, int height) {
         m_geomPass = std::make_unique<GeometryPass>();
         m_lightPass = std::make_unique<DeferredLightPass>();
         m_transparentPass = std::make_unique<ForwardTransparentPass>();
+		if (m_ctx.IsDxrSupported())
+            m_rayTracingPass = std::make_unique<RayTracingPass>();
 
         m_geomPass->Init(m_ctx.GetDevice());
         m_lightPass->Init(m_ctx.GetDevice());
         m_transparentPass->Init(m_ctx.GetDevice());
+		if (m_rayTracingPass)
+            m_rayTracingPass->Init(m_ctx.GetDevice());
 
         m_lastFrameTime = std::chrono::high_resolution_clock::now();
         return true;
@@ -132,10 +137,16 @@ void Renderer::RenderFrame() {
     passCtx.view = XMMatrixLookAtLH(eye, eye + passCtx.forward, XMVectorSet(0, 1, 0, 0));
     passCtx.proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.f), vp.Width / vp.Height, 0.1f, 5000.f);
 
-    // 依序派發至各個 Pipeline Pass
-    m_geomPass->Execute(cmdList, passCtx);
-    m_lightPass->Execute(cmdList, passCtx);
-    m_transparentPass->Execute(cmdList, passCtx);
+    if (m_rayTracingEnabled && m_ctx.IsDxrSupported()) {
+        // 進入光線追蹤管線
+        m_rayTracingPass->Execute(cmdList, passCtx);
+    }
+    else {
+        // 進入傳統光柵化管線
+        m_geomPass->Execute(cmdList, passCtx);
+        m_lightPass->Execute(cmdList, passCtx);
+        m_transparentPass->Execute(cmdList, passCtx);
+    }
 
     m_statVertices.store(passCtx.totalVerts, std::memory_order_relaxed);
     m_statPolygons.store(passCtx.totalPolys, std::memory_order_relaxed);

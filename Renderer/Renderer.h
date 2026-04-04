@@ -65,6 +65,7 @@ private:
     std::unique_ptr<IRenderPass> m_geomPass;
     std::unique_ptr<IRenderPass> m_lightPass;
     std::unique_ptr<IRenderPass> m_transparentPass;
+    std::unique_ptr<IRenderPass> m_rayTracingPass;
 
     std::atomic<bool> m_isShuttingDown{ false };
     std::atomic<int>   m_statVertices{ 0 };
