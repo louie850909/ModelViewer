@@ -18,9 +18,22 @@ void RayTracingPass::CreateRootSignature(ID3D12Device5* device) {
     device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_globalRootSig));
 }
 
+void RayTracingPass::CreateLocalRootSignature(ID3D12Device5* device) {
+    CD3DX12_ROOT_PARAMETER1 localParams[2];
+    localParams[0].InitAsShaderResourceView(0, 1); // t0, space1: Index Buffer
+    localParams[1].InitAsShaderResourceView(1, 1); // t1, space1: Vertex Buffer
+
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC localRootSigDesc;
+    localRootSigDesc.Init_1_1(2, localParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE);
+
+    ComPtr<ID3DBlob> blob, error;
+    D3DX12SerializeVersionedRootSignature(&localRootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &error);
+    device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_localRootSig));
+}
+
 void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
     // 為了相容性，這裡使用原生 Array 方式建立 Subobjects
-    D3D12_STATE_SUBOBJECT subobjects[5];
+    D3D12_STATE_SUBOBJECT subobjects[7];
     UINT index = 0;
 
     // 1. DXIL Library (載入編譯好的 CSO)
@@ -53,6 +66,18 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
     pipelineConfig.MaxTraceRecursionDepth = 1;
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, &pipelineConfig };
 
+    // Local Root Signature
+    D3D12_LOCAL_ROOT_SIGNATURE localRootSig = { m_localRootSig.Get() };
+    subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE, &localRootSig };
+
+    // 將 Local Root Signature 關聯到 HitGroup
+    D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+    association.NumExports = 1;
+    LPCWSTR exportName = L"HitGroup";
+    association.pExports = &exportName;
+    association.pSubobjectToAssociate = &subobjects[index - 1];
+    subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION, &association };
+
     D3D12_STATE_OBJECT_DESC stateObjectDesc = {};
     stateObjectDesc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
     stateObjectDesc.NumSubobjects = index;
@@ -61,24 +86,59 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
     device->CreateStateObject(&stateObjectDesc, IID_PPV_ARGS(&m_dxrStateObject));
 }
 
-void RayTracingPass::CreateSBT(ID3D12Device5* device) {
+// ==========================================
+// 動態 BuildSBT
+// ==========================================
+void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
+    if (m_instanceCount == 0) return;
+
+    // 每個 HitGroup Record 大小: 32(ID) + 8(Index Buffer VA) + 8(Vertex Buffer VA) + 16(對齊) = 64 bytes
+    UINT hitGroupStride = 64;
+    UINT sbtSize = 64 + 64 + (m_instanceCount * hitGroupStride);
+    sbtSize = (sbtSize + 255) & ~255; // 256 byte 對齊
+
+    if (!m_sbtBuffer || m_sbtBuffer->GetDesc().Width < sbtSize) {
+        auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(sbtSize);
+        device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_sbtBuffer));
+    }
+
     ComPtr<ID3D12StateObjectProperties> stateObjectProps;
     m_dxrStateObject.As(&stateObjectProps);
-
-    // 配置 256 bytes (64 bytes 給 RayGen, 64 給 Miss, 64 給 HitGroup，完全符合對齊要求)
-    auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(256);
-    device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_sbtBuffer));
 
     uint8_t* pData;
     m_sbtBuffer->Map(0, nullptr, (void**)&pData);
 
-    // 寫入 Shader Identifiers (每個長度為 32 bytes，寫入起點以 64 bytes 分隔)
-    memcpy(pData + 0, stateObjectProps->GetShaderIdentifier(L"RayGen"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-    memcpy(pData + 64, stateObjectProps->GetShaderIdentifier(L"Miss"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-    memcpy(pData + 128, stateObjectProps->GetShaderIdentifier(L"HitGroup"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+    memcpy(pData, stateObjectProps->GetShaderIdentifier(L"RayGen"), 32);
+    memcpy(pData + 64, stateObjectProps->GetShaderIdentifier(L"Miss"), 32);
+
+    uint8_t* hitGroupData = pData + 128;
+    for (auto& inst : ctx.scene->GetMeshes()) {
+        auto& mesh = inst.mesh;
+        if (!mesh || mesh->blasBuffers.empty()) continue;
+
+        for (size_t n = 0; n < mesh->nodes.size(); ++n) {
+            const auto& node = mesh->nodes[n];
+            if (node.subMeshIndices.empty()) continue;
+
+            for (int subIdx : node.subMeshIndices) {
+                const auto& sub = mesh->subMeshes[subIdx];
+
+                memcpy(hitGroupData, stateObjectProps->GetShaderIdentifier(L"HitGroup"), 32);
+
+                D3D12_GPU_VIRTUAL_ADDRESS* localArgs = (D3D12_GPU_VIRTUAL_ADDRESS*)(hitGroupData + 32);
+                // 對齊 HLSL 內的 PrimitiveIndex() 偏移量
+                localArgs[0] = mesh->indexBuffer->GetGPUVirtualAddress() + sub.indexOffset * sizeof(uint32_t);
+                localArgs[1] = mesh->vertexBuffer->GetGPUVirtualAddress();
+
+                hitGroupData += hitGroupStride;
+            }
+        }
+    }
 
     m_sbtBuffer->Unmap(0, nullptr);
+    m_sbtHitGroupOffset = 128;
+    m_sbtHitGroupStride = hitGroupStride;
 }
 
 void RayTracingPass::Init(ID3D12Device* device) {
@@ -102,8 +162,8 @@ void RayTracingPass::Init(ID3D12Device* device) {
     m_cameraCB->Map(0, nullptr, (void**)&m_mappedCameraCB);
 
     CreateRootSignature(device5.Get());
+    CreateLocalRootSignature(device5.Get());
     CreatePipelineState(device5.Get());
-    CreateSBT(device5.Get());
 }
 
 void RayTracingPass::EnsureOutputTexture(ID3D12Device* device, int width, int height) {
@@ -133,7 +193,7 @@ void RayTracingPass::BuildTLAS(ID3D12GraphicsCommandList4* cmdList4, RenderPassC
     using namespace DirectX;
     for (auto& inst : ctx.scene->GetMeshes()) {
         auto& mesh = inst.mesh;
-        if (!mesh || !mesh->blasBuffer) continue;
+        if (!mesh || mesh->blasBuffers.empty()) continue; // 防呆檢查
 
         // 計算節點 Global Transform
         std::vector<XMMATRIX> globalTransforms(mesh->nodes.size());
@@ -143,30 +203,35 @@ void RayTracingPass::BuildTLAS(ID3D12GraphicsCommandList4* cmdList4, RenderPassC
             globalTransforms[i] = (node.parentIndex >= 0) ? local * globalTransforms[node.parentIndex] : local;
         }
 
-        // 為每個 SubMesh 建立 Instance (此處假設整個 Mesh 共用一個 BLAS 以簡化實作)
         for (size_t n = 0; n < mesh->nodes.size(); ++n) {
             const auto& node = mesh->nodes[n];
             if (node.subMeshIndices.empty()) continue;
 
-            XMMATRIX modelMat = XMMatrixTranspose(globalTransforms[n]); // DXR 使用 Row-Major 3x4
-
-            D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
-            // 將 4x4 矩陣前三列填入 Transform
+            XMMATRIX modelMat = XMMatrixTranspose(globalTransforms[n]);
             XMFLOAT4X4 fMat;
             XMStoreFloat4x4(&fMat, modelMat);
-            memcpy(instanceDesc.Transform, &fMat, sizeof(float) * 12);
 
-            instanceDesc.InstanceID = (UINT)n;
-            instanceDesc.InstanceMask = 0xFF;
-            instanceDesc.InstanceContributionToHitGroupIndex = 0; // 後續 SBT 會用到
-            instanceDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-            instanceDesc.AccelerationStructure = mesh->blasBuffer->GetGPUVirtualAddress();
+            // 將 Node 所屬的 SubMesh 個別註冊為 TLAS Instance
+            for (int subIdx : node.subMeshIndices) {
+                if (subIdx >= mesh->blasBuffers.size() || !mesh->blasBuffers[subIdx]) continue;
 
-            instances.push_back(instanceDesc);
+                D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
+                memcpy(instanceDesc.Transform, &fMat, sizeof(float) * 12);
+
+                instanceDesc.InstanceID = (UINT)instances.size();
+                instanceDesc.InstanceMask = 0xFF;
+                // 利用全域數量確保 HitGroup 嚴格對齊
+                instanceDesc.InstanceContributionToHitGroupIndex = (UINT)instances.size();
+                instanceDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+                instanceDesc.AccelerationStructure = mesh->blasBuffers[subIdx]->GetGPUVirtualAddress();
+
+                instances.push_back(instanceDesc);
+            }
         }
     }
 
-    if (instances.empty()) return;
+    m_instanceCount = (UINT)instances.size();
+    if (m_instanceCount == 0) return;
 
     // 將資料寫入 Upload Buffer
     void* mappedData;
@@ -213,10 +278,13 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
 
     EnsureOutputTexture(ctx.gfx->GetDevice(), ctx.gfx->GetWidth(), ctx.gfx->GetHeight());
     BuildTLAS(cmdList4.Get(), ctx);
+    if (m_instanceCount == 0) return; // 場景為空則跳出
 
     // ==========================================
     // 光線追蹤派發 (Dispatch Rays)
     // ==========================================
+    // 每次繪製前動態更新 SBT
+    BuildSBT(ctx.gfx->GetDevice5(), ctx);
 
     // 綁定管線與 Descriptor Heap
     cmdList4->SetPipelineState1(m_dxrStateObject.Get());
@@ -245,9 +313,10 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     rayDesc.MissShaderTable.SizeInBytes = 64;
     rayDesc.MissShaderTable.StrideInBytes = 64;
 
-    rayDesc.HitGroupTable.StartAddress = m_sbtBuffer->GetGPUVirtualAddress() + 128;
-    rayDesc.HitGroupTable.SizeInBytes = 64;
-    rayDesc.HitGroupTable.StrideInBytes = 64;
+    // 套用動態的 HitGroup 設定
+    rayDesc.HitGroupTable.StartAddress = m_sbtBuffer->GetGPUVirtualAddress() + m_sbtHitGroupOffset;
+    rayDesc.HitGroupTable.SizeInBytes = m_instanceCount * m_sbtHitGroupStride;
+    rayDesc.HitGroupTable.StrideInBytes = m_sbtHitGroupStride;
 
     rayDesc.Width = ctx.gfx->GetWidth();
     rayDesc.Height = ctx.gfx->GetHeight();

@@ -36,7 +36,14 @@ private:
     };
     CameraParams* m_mappedCameraCB = nullptr;
 
+	// SBT 相關參數
+    ComPtr<ID3D12RootSignature> m_localRootSig;
+    UINT m_instanceCount = 0;
+    UINT m_sbtHitGroupOffset = 0;
+    UINT m_sbtHitGroupStride = 0;
+
     void CreateRootSignature(ID3D12Device5* device);
+    void CreateLocalRootSignature(ID3D12Device5* device);
     void CreatePipelineState(ID3D12Device5* device);
-    void CreateSBT(ID3D12Device5* device);
+    void BuildSBT(ID3D12Device5* device, RenderPassContext& ctx);
 };

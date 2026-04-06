@@ -45,6 +45,5 @@ struct Mesh {
     D3D12_INDEX_BUFFER_VIEW  ibView = {};
 
     // --- DXR BLAS 資源 ---
-    ComPtr<ID3D12Resource> blasBuffer;
-    ComPtr<ID3D12Resource> blasScratch;
+    std::vector<ComPtr<ID3D12Resource>> blasBuffers;
 };
