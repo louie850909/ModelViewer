@@ -5,14 +5,23 @@ void RayTracingPass::CreateRootSignature(ID3D12Device5* device) {
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
     uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[4];
+    // 無限制大小的 SRV 陣列 (t0, space2)
+    CD3DX12_DESCRIPTOR_RANGE1 srvRange;
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, (UINT)-1, 0, 2, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0);
+
+    CD3DX12_ROOT_PARAMETER1 rootParams[5];
     rootParams[0].InitAsDescriptorTable(1, &uavRange);                 // u0: 輸出貼圖
     rootParams[1].InitAsShaderResourceView(0);                         // t0: TLAS
     rootParams[2].InitAsConstantBufferView(0);                         // b0: Camera CB
     rootParams[3].InitAsConstantBufferView(1);                         // b1: Light CB
+	rootParams[4].InitAsDescriptorTable(1, &srvRange);                 // t0, space2: 材質 SRV 陣列全域貼圖
+
+    // 靜態採樣器 (s0, space0)
+    CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+    sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC globalRootSigDesc;
-    globalRootSigDesc.Init_1_1(4, rootParams);
+    globalRootSigDesc.Init_1_1(5, rootParams, 1, &sampler); // 傳入 sampler
 
     ComPtr<ID3DBlob> blob, error;
     D3DX12SerializeVersionedRootSignature(&globalRootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &error);
@@ -20,12 +29,13 @@ void RayTracingPass::CreateRootSignature(ID3D12Device5* device) {
 }
 
 void RayTracingPass::CreateLocalRootSignature(ID3D12Device5* device) {
-    CD3DX12_ROOT_PARAMETER1 localParams[2];
+    CD3DX12_ROOT_PARAMETER1 localParams[3];
     localParams[0].InitAsShaderResourceView(0, 1); // t0, space1: Index Buffer
     localParams[1].InitAsShaderResourceView(1, 1); // t1, space1: Vertex Buffer
+    localParams[2].InitAsConstants(4, 0, 1);       // b0, space1: 傳遞 textureIndex (16 bytes = 4 DWORDs)
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC localRootSigDesc;
-    localRootSigDesc.Init_1_1(2, localParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE);
+    localRootSigDesc.Init_1_1(3, localParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE);
 
     ComPtr<ID3DBlob> blob, error;
     D3DX12SerializeVersionedRootSignature(&localRootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &error);
@@ -118,10 +128,31 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
 
     // HitGroup 起始偏移量往後推
     uint8_t* hitGroupData = pData + 192;
+
+    // 準備將各模型的 SRV 複製到 Global Heap 中 (索引 0 保留給 UAV)
+    UINT destHeapIndex = 1;
+    UINT srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE destHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 1, srvDescSize);
+
     for (auto& inst : ctx.scene->GetMeshes()) {
         auto& mesh = inst.mesh;
         if (!mesh || mesh->blasBuffers.empty()) continue;
 
+        // 複製此 Mesh 的所有材質貼圖到 Global Heap
+        std::vector<UINT> matToGlobalIdx;
+        if (inst.srvHeap) {
+            UINT numMats = (UINT)mesh->texturePaths.size();
+            if (numMats == 0) numMats = 1; // 至少會有一個預設材質
+            for (UINT m = 0; m < numMats; ++m) {
+                CD3DX12_CPU_DESCRIPTOR_HANDLE srcHandle(inst.srvHeap->GetCPUDescriptorHandleForHeapStart(), m * 2, srvDescSize);
+                device->CopyDescriptorsSimple(1, destHandle, srcHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                matToGlobalIdx.push_back(destHeapIndex - 1); // 記錄相對於 Unbounded Array (從1開始) 的內部索引
+                destHandle.Offset(1, srvDescSize);
+                destHeapIndex++;
+            }
+        }
+
+        // 將貼圖索引寫入 HitGroup
         for (size_t n = 0; n < mesh->nodes.size(); ++n) {
             const auto& node = mesh->nodes[n];
             if (node.subMeshIndices.empty()) continue;
@@ -135,6 +166,11 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
                 // 對齊 HLSL 內的 PrimitiveIndex() 偏移量
                 localArgs[0] = mesh->indexBuffer->GetGPUVirtualAddress() + sub.indexOffset * sizeof(uint32_t);
                 localArgs[1] = mesh->vertexBuffer->GetGPUVirtualAddress();
+
+                // 綁定 Material Constant (Texture Index)
+                uint32_t* localConstants = (uint32_t*)(hitGroupData + 32 + 16);
+                int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < matToGlobalIdx.size()) ? sub.materialIndex : 0;
+                localConstants[0] = matToGlobalIdx.empty() ? 0xFFFFFFFF : matToGlobalIdx[matIdx];
 
                 hitGroupData += hitGroupStride;
             }
@@ -156,7 +192,7 @@ void RayTracingPass::Init(ID3D12Device* device) {
 
     // 建立供 UAV 使用的 Descriptor Heap
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-    heapDesc.NumDescriptors = 1;
+    heapDesc.NumDescriptors = 2048;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_descriptorHeap));
@@ -309,6 +345,11 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     cmdList4->SetComputeRootShaderResourceView(1, m_tlasBuffer->GetGPUVirtualAddress());              // TLAS
     cmdList4->SetComputeRootConstantBufferView(2, m_cameraCB->GetGPUVirtualAddress());                // Camera
 	cmdList4->SetComputeRootConstantBufferView(3, ctx.lightCB->GetGPUVirtualAddress());  		        // Light
+
+    // 綁定全域的貼圖陣列 (指向 Heap 的 index 1)
+    UINT srvDescSize = ctx.gfx->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    CD3DX12_GPU_DESCRIPTOR_HANDLE srvTable(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, srvDescSize);
+    cmdList4->SetComputeRootDescriptorTable(4, srvTable);
 
     // 設定 SBT 區塊位置與大小
     D3D12_DISPATCH_RAYS_DESC rayDesc = {};

@@ -40,6 +40,18 @@ struct Vertex
 ByteAddressBuffer IndexBuffer : register(t0, space1);
 StructuredBuffer<Vertex> VertexBuffer : register(t1, space1);
 
+// 告知這個 SubMesh 該用哪張貼圖
+cbuffer MaterialConstants : register(b0, space1)
+{
+    uint textureIndex;
+};
+
+// ==========================================
+// 全域的無綁定貼圖陣列與採樣器
+// ==========================================
+Texture2D allTextures[] : register(t0, space2);
+SamplerState texSampler : register(s0, space0);
+
 struct Payload
 {
     float4 color;
@@ -107,11 +119,19 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     float3 n0 = VertexBuffer[i0].normal;
     float3 n1 = VertexBuffer[i1].normal;
     float3 n2 = VertexBuffer[i2].normal;
+    
+    // 取得三個頂點的 UV
+    float2 uv0 = VertexBuffer[i0].uv;
+    float2 uv1 = VertexBuffer[i1].uv;
+    float2 uv2 = VertexBuffer[i2].uv;
 
     // 利用重心座標進行法線插值
     float3 barycentrics = float3(1.0f - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
     float3 localNormal = n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z;
     localNormal = normalize(localNormal);
+    
+    // 插值計算交點的 UV
+    float2 localUV = uv0 * barycentrics.x + uv1 * barycentrics.y + uv2 * barycentrics.z;
 
     // 將法線轉至世界空間 (利用 WorldToObject 矩陣的轉置來正確處理非等比縮放)
     float3x4 mInv = WorldToObject3x4();
@@ -122,6 +142,17 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
     float3 finalColor = float3(0, 0, 0);
     float3 baseColor = float3(0.9f, 0.9f, 0.9f); // 暫時代替紋理的純白材質
+    
+    // ==========================================
+    // 從全域陣列中採樣貼圖
+    // ==========================================
+    if (textureIndex != 0xFFFFFFFF)
+    {
+        // 必須使用 NonUniformResourceIndex 避免 GPU 執行緒在存取不同貼圖時發生死結
+        float4 texColor = allTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(texSampler, localUV, 0);
+        // 將 Albedo 的 sRGB 色彩轉回線性空間 (Linear Space) 讓光照計算更寫實
+        baseColor = pow(texColor.rgb, 2.2f);
+    }
 
     // 尋訪所有光源
     for (int i = 0; i < numLights; i++)
