@@ -120,7 +120,8 @@
     </FxCompile>
     <CustomBuild>
       <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
-dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"
+</Command>
     </CustomBuild>
     <CustomBuild>
       <Message>Performing Custom HLSL Build Tools</Message>
@@ -163,7 +164,8 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     </FxCompile>
     <CustomBuild>
       <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
-dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"
+</Command>
     </CustomBuild>
     <CustomBuild>
       <Message>Performing Custom HLSL Build Tools</Message>
@@ -205,7 +207,8 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     </FxCompile>
     <CustomBuild>
       <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
-dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"
+</Command>
     </CustomBuild>
     <CustomBuild>
       <Message>Performing Custom HLSL Build Tools</Message>
@@ -249,7 +252,8 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     </FxCompile>
     <CustomBuild>
       <Command>dxc -T vs_6_0 -E VSMain -D COMPILE_VS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_VS.cso" "%(Identity)"
-dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"</Command>
+dxc -T ps_6_0 -E PSMain -D COMPILE_PS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename)_PS.cso" "%(Identity)"
+</Command>
     </CustomBuild>
     <CustomBuild>
       <Message>Performing Custom HLSL Build Tools</Message>
@@ -325,6 +329,43 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
   <ItemGroup>
     <CustomBuild Include="shaders\ForwardTransparent.hlsl">
       <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\Raytracing.hlsl">
+      <FileType>Document</FileType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Library</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">6.3</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Library</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">6.3</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Library</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.3</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Library</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.3</ShaderModel>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+      </EntryPointName>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+      </EntryPointName>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </EntryPointName>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </EntryPointName>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">dxc.exe -T lib_6_3 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compiling Raytracing Shader with DXC...</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">dxc.exe -T lib_6_3 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compiling Raytracing Shader with DXC...</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc.exe -T lib_6_3 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compiling Raytracing Shader with DXC...</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc.exe -T lib_6_3 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling Raytracing Shader with DXC...</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
     </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

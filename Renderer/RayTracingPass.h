@@ -20,4 +20,23 @@ private:
     ComPtr<ID3D12Resource> m_raytracingOutput;
     int m_outputWidth = 0;
     int m_outputHeight = 0;
+
+    // DXR 核心資源
+    ComPtr<ID3D12RootSignature> m_globalRootSig;
+    ComPtr<ID3D12StateObject>   m_dxrStateObject;
+    ComPtr<ID3D12Resource>      m_sbtBuffer;
+    ComPtr<ID3D12DescriptorHeap> m_descriptorHeap; // 供 UAV 使用
+
+    // 相機常數緩衝區
+    ComPtr<ID3D12Resource> m_cameraCB;
+    struct CameraParams {
+        DirectX::XMFLOAT4X4 viewProjInv;
+        DirectX::XMFLOAT3 cameraPos;
+        float pad;
+    };
+    CameraParams* m_mappedCameraCB = nullptr;
+
+    void CreateRootSignature(ID3D12Device5* device);
+    void CreatePipelineState(ID3D12Device5* device);
+    void CreateSBT(ID3D12Device5* device);
 };

@@ -127,5 +127,8 @@
     <CustomBuild Include="shaders\ForwardTransparent.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
+    <CustomBuild Include="shaders\Raytracing.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>
