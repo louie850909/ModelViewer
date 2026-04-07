@@ -21,6 +21,9 @@ struct RenderPassContext {
     int currentDrawCalls = 0;
     int totalVerts = 0;
     int totalPolys = 0;
+
+    // // 目前累計的影格數
+    UINT frameCount = 0;
 };
 
 // 抽象 Render Pass 介面

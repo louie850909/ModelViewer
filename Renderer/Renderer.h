@@ -40,6 +40,7 @@ public:
     void SetRayTracingEnabled(bool enable) { m_rayTracingEnabled = enable; }
 
 private:
+    UINT m_frameCount = 0;
     void UpdateLightBuffer();
 
     bool m_rayTracingEnabled = false;

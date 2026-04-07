@@ -64,7 +64,8 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 
     // 3. Shader Config (Payload 大小)
     D3D12_RAYTRACING_SHADER_CONFIG shaderConfig = {};
-    shaderConfig.MaxPayloadSizeInBytes = 16; // float4 color
+    // 將 Payload 擴大到 32 Bytes (radiance 12 + throughput 12 + depth 4 + seed 4)
+    shaderConfig.MaxPayloadSizeInBytes = 32;
     shaderConfig.MaxAttributeSizeInBytes = 8; // float2 barycentrics
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG, &shaderConfig };
 
@@ -74,7 +75,7 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 
     // 5. Pipeline Config (最大遞迴深度)
     D3D12_RAYTRACING_PIPELINE_CONFIG pipelineConfig = {};
-    pipelineConfig.MaxTraceRecursionDepth = 2;
+    pipelineConfig.MaxTraceRecursionDepth = 3; // Primary + Bounce + Shadow
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, &pipelineConfig };
 
     // Local Root Signature
@@ -339,6 +340,7 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     XMVECTOR det;
     XMStoreFloat4x4(&m_mappedCameraCB->viewProjInv, XMMatrixTranspose(XMMatrixInverse(&det, viewProj)));
     m_mappedCameraCB->cameraPos = ctx.scene->GetCameraPos();
+    m_mappedCameraCB->frameCount = ctx.frameCount;
 
     // 綁定 Root 參數
     cmdList4->SetComputeRootDescriptorTable(0, m_descriptorHeap->GetGPUDescriptorHandleForHeapStart()); // UAV

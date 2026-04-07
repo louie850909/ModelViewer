@@ -136,6 +136,7 @@ void Renderer::RenderFrame() {
     passCtx.forward = XMVector3TransformNormal(XMVectorSet(0, 0, 1, 0), rotation);
     passCtx.view = XMMatrixLookAtLH(eye, eye + passCtx.forward, XMVectorSet(0, 1, 0, 0));
     passCtx.proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.f), vp.Width / vp.Height, 0.1f, 5000.f);
+    passCtx.frameCount = m_frameCount++;
 
     if (m_rayTracingEnabled && m_ctx.IsDxrSupported()) {
         // 進入光線追蹤管線
