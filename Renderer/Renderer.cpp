@@ -34,14 +34,17 @@ bool Renderer::Init(IUnknown* panelUnknown, int width, int height) {
         m_geomPass = std::make_unique<GeometryPass>();
         m_lightPass = std::make_unique<DeferredLightPass>();
         m_transparentPass = std::make_unique<ForwardTransparentPass>();
-		if (m_ctx.IsDxrSupported())
+        if (m_ctx.IsDxrSupported())
+        {
             m_rayTracingPass = std::make_unique<RayTracingPass>();
+            m_temporalDenoiserPass = std::make_unique<TemporalDenoiserPass>();
+        }
 
         m_geomPass->Init(m_ctx.GetDevice());
         m_lightPass->Init(m_ctx.GetDevice());
         m_transparentPass->Init(m_ctx.GetDevice());
-		if (m_rayTracingPass)
-            m_rayTracingPass->Init(m_ctx.GetDevice());
+		if (m_rayTracingPass) m_rayTracingPass->Init(m_ctx.GetDevice());
+        if (m_temporalDenoiserPass) m_temporalDenoiserPass->Init(m_ctx.GetDevice());
 
         m_lastFrameTime = std::chrono::high_resolution_clock::now();
         return true;
@@ -150,6 +153,7 @@ void Renderer::RenderFrame() {
     if (m_rayTracingEnabled && m_ctx.IsDxrSupported()) {
         // 進入光線追蹤管線
         m_rayTracingPass->Execute(cmdList, passCtx);
+        m_temporalDenoiserPass->Execute(cmdList, passCtx);
     }
     else {
         // 進入傳統光柵化管線

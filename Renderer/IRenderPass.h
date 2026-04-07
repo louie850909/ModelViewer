@@ -26,6 +26,8 @@ struct RenderPassContext {
 
     // // 目前累計的影格數
     UINT frameCount = 0;
+    // --- 帶有雜訊的 Raw GI ---
+    ID3D12Resource* rawRaytracingOutput = nullptr;
 };
 
 // 抽象 Render Pass 介面

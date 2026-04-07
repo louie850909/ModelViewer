@@ -373,22 +373,6 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
 
     // 發射！
     cmdList4->DispatchRays(&rayDesc);
-
-    // ==========================================
-    // 準備複製到 BackBuffer
-    // ==========================================
-    auto backBuffer = ctx.gfx->GetCurrentBackBuffer();
-    D3D12_RESOURCE_BARRIER preCopy[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST),
-        CD3DX12_RESOURCE_BARRIER::Transition(m_raytracingOutput.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE)
-    };
-    cmdList->ResourceBarrier(2, preCopy);
-
-    cmdList->CopyResource(backBuffer, m_raytracingOutput.Get());
-
-    D3D12_RESOURCE_BARRIER postCopy[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        CD3DX12_RESOURCE_BARRIER::Transition(m_raytracingOutput.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-    };
-    cmdList->ResourceBarrier(2, postCopy);
+    // // 將原始輸出交給 Context，讓下一個 Pass (Denoiser) 接手
+    ctx.rawRaytracingOutput = m_raytracingOutput.Get();
 }

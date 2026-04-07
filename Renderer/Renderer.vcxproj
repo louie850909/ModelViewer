@@ -287,6 +287,7 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="IRenderPass.h" />
     <ClInclude Include="Scene.h" />
+    <ClInclude Include="TemporalDenoiserPass.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DeferredLightPass.cpp" />
@@ -305,6 +306,7 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     <ClCompile Include="RayTracingPass.cpp" />
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Scene.cpp" />
+    <ClCompile Include="TemporalDenoiserPass.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -365,6 +367,31 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc.exe -T lib_6_3 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
 </Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compiling Raytracing Shader with DXC...</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\TemporalAccumulation.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CSMain</EntryPointName>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">CSMain</EntryPointName>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CSMain</EntryPointName>
+      <EntryPointName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CSMain</EntryPointName>
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
+</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
     </CustomBuild>
   </ItemGroup>
