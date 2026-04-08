@@ -3,7 +3,7 @@
 
 void RayTracingPass::CreateRootSignature(ID3D12Device5* device) {
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
-    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
     // 無限制大小的 SRV 陣列 (t0, space2)
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
@@ -139,15 +139,34 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
         auto& mesh = inst.mesh;
         if (!mesh || mesh->blasBuffers.empty()) continue;
 
-        // 複製此 Mesh 的所有材質貼圖到 Global Heap
+        // 將貼圖 SRV 直接建立到 Global Heap 中
         std::vector<UINT> matToGlobalIdx;
-        if (inst.srvHeap) {
-            UINT numMats = (UINT)mesh->texturePaths.size();
-            if (numMats == 0) numMats = 1; // 至少會有一個預設材質
-            for (UINT m = 0; m < numMats; ++m) {
-                CD3DX12_CPU_DESCRIPTOR_HANDLE srcHandle(inst.srvHeap->GetCPUDescriptorHandleForHeapStart(), m * 2, srvDescSize);
-                device->CopyDescriptorsSimple(1, destHandle, srcHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-                matToGlobalIdx.push_back(destHeapIndex - 1); // 記錄相對於 Unbounded Array (從1開始) 的內部索引
+        UINT numMats = (UINT)mesh->texturePaths.size();
+        if (numMats == 0) numMats = 1; // 至少會有一個預設材質
+
+        for (UINT m = 0; m < numMats; ++m) {
+            matToGlobalIdx.push_back(destHeapIndex - 1); // 記錄相對於 Unbounded Array (從1開始) 的內部索引
+
+            // 每個材質包含 BaseColor 與 MetallicRoughness (2 張貼圖)
+            for (int t = 0; t < 2; ++t) {
+                int texIdx = m * 2 + t;
+                if (texIdx < (int)inst.textures.size() && inst.textures[texIdx]) {
+                    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+                    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                    sv.Format = inst.textures[texIdx]->GetDesc().Format;
+                    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                    sv.Texture2D.MipLevels = inst.textures[texIdx]->GetDesc().MipLevels;
+                    device->CreateShaderResourceView(inst.textures[texIdx].Get(), &sv, destHandle);
+                }
+                else {
+                    // 若材質缺失，填入空 SRV 避免 Crash
+                    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+                    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                    sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                    sv.Texture2D.MipLevels = 1;
+                    device->CreateShaderResourceView(nullptr, &sv, destHandle);
+                }
                 destHandle.Offset(1, srvDescSize);
                 destHeapIndex++;
             }

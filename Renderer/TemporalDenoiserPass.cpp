@@ -9,9 +9,9 @@ void TemporalDenoiserPass::Init(ID3D12Device* device) {
     device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_descriptorHeap));
 
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
-    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
+    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0); // t0 - t2
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
     CD3DX12_ROOT_PARAMETER1 rootParams[3];
     rootParams[0].InitAsConstants(2, 0); // b0: width, height
@@ -96,14 +96,21 @@ void TemporalDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPas
             uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
             uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-            // 使用 descriptor heap 的前兩個 slot 暫放 clear 用的 UAV
-            auto cpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+            // 1. 取得 CPU-only heap 的 handle (用於 Clear 參數)
+            auto clearCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+                m_clearHeapForInit->GetCPUDescriptorHandleForHeapStart(), i, srvUavSize);
+
+            // 2. 取得 Shader-visible heap 的 handle (用於綁定與建立)
+            auto cpuHandleInGpuHeap = CD3DX12_CPU_DESCRIPTOR_HANDLE(
                 m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), i, srvUavSize);
             auto gpuHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(
                 m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), i, srvUavSize);
 
-            device->CreateUnorderedAccessView(m_history[i].Get(), nullptr, &uavDesc, cpuHandle);
-            cmdList->ClearUnorderedAccessViewFloat(gpuHandle, cpuHandle,
+            // 在 Shader-visible heap 中建立 UAV
+            device->CreateUnorderedAccessView(m_history[i].Get(), nullptr, &uavDesc, cpuHandleInGpuHeap);
+
+            // 執行 Clear (傳入對應的 gpuHandle 以及 CPU-only 的 clearCpuHandle)
+            cmdList->ClearUnorderedAccessViewFloat(gpuHandle, clearCpuHandle,
                 m_history[i].Get(), clearColor, 0, nullptr);
         }
     }
