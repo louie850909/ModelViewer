@@ -154,21 +154,32 @@ void Renderer::RenderFrame() {
     // 1. 計算無 Jitter 投影矩陣
     passCtx.unjitteredProj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.f), vp.Width / vp.Height, 0.1f, 5000.f);
 
-    // 2. 產生 Jitter 偏移
-    int jitterPhaseCount = 16;
-    int jitterIndex = (m_frameCount % jitterPhaseCount) + 1;
-    passCtx.jitterX = Helper::CreateHaltonSequence(jitterIndex, 2) - 0.5f;
-    passCtx.jitterY = Helper::CreateHaltonSequence(jitterIndex, 3) - 0.5f;
+    // 判斷是否需要啟用 Jitter (只有在光追/Temporal Pass 開啟時才需要)
+    bool useTemporalJitter = (m_rayTracingEnabled && m_ctx.IsDxrSupported());
 
-    float ndcJitterX = (passCtx.jitterX * 2.0f) / vp.Width;
-    float ndcJitterY = (passCtx.jitterY * 2.0f) / vp.Height;
+    if (useTemporalJitter) {
+        // 2. 產生 Jitter 偏移
+        int jitterPhaseCount = 16;
+        int jitterIndex = (m_frameCount % jitterPhaseCount) + 1;
+        passCtx.jitterX = Helper::CreateHaltonSequence(jitterIndex, 2) - 0.5f;
+        passCtx.jitterY = Helper::CreateHaltonSequence(jitterIndex, 3) - 0.5f;
 
-    // 3. 套用 Jitter 到最終投影矩陣
-    XMFLOAT4X4 projFloat4x4;
-    XMStoreFloat4x4(&projFloat4x4, passCtx.unjitteredProj);
-    projFloat4x4._31 += ndcJitterX;
-    projFloat4x4._32 += ndcJitterY;
-    passCtx.proj = XMLoadFloat4x4(&projFloat4x4);
+        float ndcJitterX = (passCtx.jitterX * 2.0f) / vp.Width;
+        float ndcJitterY = (passCtx.jitterY * 2.0f) / vp.Height;
+
+        // 3. 套用 Jitter 到最終投影矩陣
+        XMFLOAT4X4 projFloat4x4;
+        XMStoreFloat4x4(&projFloat4x4, passCtx.unjitteredProj);
+        projFloat4x4._31 += ndcJitterX;
+        projFloat4x4._32 += ndcJitterY;
+        passCtx.proj = XMLoadFloat4x4(&projFloat4x4);
+    }
+    else {
+        // 傳統管線：不套用 Jitter，直接使用原始投影矩陣
+        passCtx.jitterX = 0.0f;
+        passCtx.jitterY = 0.0f;
+        passCtx.proj = passCtx.unjitteredProj;
+    }
 
     passCtx.frameCount = m_frameCount++;
 
