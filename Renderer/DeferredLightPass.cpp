@@ -58,11 +58,4 @@ void DeferredLightPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassCo
 
     cmdList->DrawInstanced(3, 1, 0, 0);
     ctx.currentDrawCalls++;
-
-    D3D12_RESOURCE_BARRIER barriersToRTV[3] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetAlbedo(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetNormal(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetWorldPos(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET)
-    };
-    cmdList->ResourceBarrier(3, barriersToRTV);
 }

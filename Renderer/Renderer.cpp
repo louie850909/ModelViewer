@@ -149,7 +149,7 @@ void Renderer::RenderFrame() {
     passCtx.frameCount = m_frameCount++;
 
     // --- 處理上一幀的矩陣 ---
-    if (passCtx.frameCount == 1) { // 第一幀沒有上一幀，設為當前幀
+    if (passCtx.frameCount == 0) { // 第一幀沒有上一幀，設為當前幀
         m_prevView = passCtx.view;
         m_prevProj = passCtx.proj;
     }
