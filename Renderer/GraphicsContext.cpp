@@ -48,6 +48,12 @@ void GraphicsContext::Resize(int width, int height, float scale) {
     m_swapChain->ResizeBuffers(FRAME_COUNT, (UINT)width, (UINT)height, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
     m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
     m_width = width; m_height = height;
+
+    // 視窗大小改變並重新建立 Buffer 後，重置所有狀態追蹤為 PRESENT
+    for (UINT i = 0; i < FRAME_COUNT; i++) {
+        m_backBufferStates[i] = D3D12_RESOURCE_STATE_PRESENT;
+    }
+
     CreateRTV();
     CreateDSV();
 }
@@ -57,10 +63,14 @@ void GraphicsContext::ResetCommandList() {
     alloc->Reset();
     m_cmdList->Reset(alloc.Get(), nullptr);
 
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        m_renderTargets[m_frameIndex].Get(),
-        D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    m_cmdList->ResourceBarrier(1, &barrier);
+    // 只有在狀態為 PRESENT 時，才執行轉換
+    if (m_backBufferStates[m_frameIndex] == D3D12_RESOURCE_STATE_PRESENT) {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            m_renderTargets[m_frameIndex].Get(),
+            D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        m_cmdList->ResourceBarrier(1, &barrier);
+        m_backBufferStates[m_frameIndex] = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    }
 }
 
 void GraphicsContext::SetRenderTargetsAndClear(const float clearColor[4]) {
@@ -73,10 +83,14 @@ void GraphicsContext::SetRenderTargetsAndClear(const float clearColor[4]) {
 }
 
 void GraphicsContext::ExecuteCommandListAndPresent() {
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        m_renderTargets[m_frameIndex].Get(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-    m_cmdList->ResourceBarrier(1, &barrier);
+    // 只有在狀態為 RENDER_TARGET 時，才轉回 PRESENT
+    if (m_backBufferStates[m_frameIndex] == D3D12_RESOURCE_STATE_RENDER_TARGET) {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            m_renderTargets[m_frameIndex].Get(),
+            D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+        m_cmdList->ResourceBarrier(1, &barrier);
+        m_backBufferStates[m_frameIndex] = D3D12_RESOURCE_STATE_PRESENT;
+    }
     m_cmdList->Close();
 
     ID3D12CommandList* lists[] = { m_cmdList.Get() };

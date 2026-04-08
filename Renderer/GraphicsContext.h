@@ -58,6 +58,14 @@ private:
     ComPtr<IDXGISwapChain4>           m_swapChain;
     ComPtr<ID3D12DescriptorHeap>      m_rtvHeap;
     ComPtr<ID3D12Resource>            m_renderTargets[FRAME_COUNT];
+
+    // 追蹤每個 BackBuffer 的當前狀態
+    D3D12_RESOURCE_STATES m_backBufferStates[FRAME_COUNT] = {
+        D3D12_RESOURCE_STATE_PRESENT,
+        D3D12_RESOURCE_STATE_PRESENT,
+        D3D12_RESOURCE_STATE_PRESENT
+    };
+
     ComPtr<ID3D12CommandAllocator>    m_cmdAllocators[FRAME_COUNT];
     ComPtr<ID3D12GraphicsCommandList> m_cmdList;
     ComPtr<ID3D12Fence>               m_fence;
