@@ -4,6 +4,24 @@ cbuffer Constants : register(b0)
     uint height;
 };
 
+float3 RGBToYCoCg(float3 rgb)
+{
+    return float3(
+        rgb.r * 0.25f + rgb.g * 0.5f + rgb.b * 0.25f,
+        rgb.r * 0.5f - rgb.b * 0.5f,
+        -rgb.r * 0.25f + rgb.g * 0.5f - rgb.b * 0.25f
+    );
+}
+
+float3 YCoCgToRGB(float3 ycocg)
+{
+    return float3(
+        ycocg.x + ycocg.y - ycocg.z,
+        ycocg.x + ycocg.z,
+        ycocg.x - ycocg.y - ycocg.z
+    );
+}
+
 RWTexture2D<float4> OutputGI : register(u0);
 Texture2D<float4> RawGI : register(t0);
 Texture2D<float2> VelocityMap : register(t1);
@@ -31,26 +49,29 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
         historyColor = HistoryGI.SampleLevel(LinearSampler, prevUV, 0);
 
         // Neighborhood Clamping: 利用當前畫面的 3x3 區域來限制歷史顏色，防止 Ghosting
-        float4 m1 = 0.0f;
-        float4 m2 = 0.0f;
+        float3 m1 = 0.0f;
+        float3 m2 = 0.0f;
         for (int y = -1; y <= 1; y++)
         {
             for (int x = -1; x <= 1; x++)
             {
                 int2 samplePos = clamp(int2(DTid.xy) + int2(x, y), int2(0, 0), int2(width - 1, height - 1));
-                float4 c = RawGI[samplePos];
+                float3 c = RGBToYCoCg(RawGI[samplePos].rgb);
                 m1 += c;
                 m2 += c * c;
             }
         }
-        float4 mu = m1 / 9.0f;
-        float4 sigma = sqrt(max(m2 / 9.0f - mu * mu, 0.0f));
+        float3 mu = m1 / 9.0f;
+        float3 sigma = sqrt(max(m2 / 9.0f - mu * mu, 0.0f));
         
         float boxMultiplier = 1.25f;
-        float4 colorMin = mu - (boxMultiplier * sigma + 0.005f);
-        float4 colorMax = mu + (boxMultiplier * sigma + 0.005f);
+        float3 colorMin = mu - (boxMultiplier * sigma + 0.005f);
+        float3 colorMax = mu + (boxMultiplier * sigma + 0.005f);
 
-        historyColor = clamp(historyColor, colorMin, colorMax);
+        // 將歷史顏色轉入 YCoCg 進行裁切，再轉回 RGB
+        float3 histYCoCg = RGBToYCoCg(historyColor.rgb);
+        histYCoCg = clamp(histYCoCg, colorMin, colorMax);
+        historyColor = float4(YCoCgToRGB(histYCoCg), historyColor.a);
     }
     else
     {
