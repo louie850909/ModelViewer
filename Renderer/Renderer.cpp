@@ -309,8 +309,8 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     cmdList->CopyResource(mesh->vertexBuffer.Get(), inst.vbUpload.Get());
     cmdList->CopyResource(mesh->indexBuffer.Get(), inst.ibUpload.Get());
     D3D12_RESOURCE_BARRIER barriers[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(mesh->vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER),
-        CD3DX12_RESOURCE_BARRIER::Transition(mesh->indexBuffer.Get(),  D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER),
+        CD3DX12_RESOURCE_BARRIER::Transition(mesh->vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ),
+        CD3DX12_RESOURCE_BARRIER::Transition(mesh->indexBuffer.Get(),  D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ),
     };
     cmdList->ResourceBarrier(2, barriers);
 
@@ -355,7 +355,7 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
             auto scratchDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
             auto blasDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
-            device5->CreateCommittedResource(&defaultHeapForBlas, D3D12_HEAP_FLAG_NONE, &scratchDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&scratchBuffers[i]));
+            device5->CreateCommittedResource(&defaultHeapForBlas, D3D12_HEAP_FLAG_NONE, &scratchDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&scratchBuffers[i]));
             device5->CreateCommittedResource(&defaultHeapForBlas, D3D12_HEAP_FLAG_NONE, &blasDesc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, nullptr, IID_PPV_ARGS(&mesh->blasBuffers[i]));
 
             D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};

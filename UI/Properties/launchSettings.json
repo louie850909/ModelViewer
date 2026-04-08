@@ -2,7 +2,7 @@
   "profiles": {
     "UI (Package)": {
       "commandName": "MsixPackage",
-      "nativeDebugging": false
+      "nativeDebugging": true
     },
     "UI (Unpackaged)": {
       "commandName": "Project",

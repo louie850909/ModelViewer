@@ -32,33 +32,36 @@ void GBuffer::Shutdown() {
 void GBuffer::CreateResources(ID3D12Device* device, int width, int height) {
     auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 
+    // 將 SRV 設為預設初始狀態
+    D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
     // 1. Albedo + Roughness (R8G8B8A8)
     D3D12_CLEAR_VALUE clearColorZero = {};
     clearColorZero.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     clearColorZero.Color[0] = 0.0f; clearColorZero.Color[1] = 0.0f; clearColorZero.Color[2] = 0.0f; clearColorZero.Color[3] = 0.0f;
-    auto descAlbedo = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descAlbedo, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearColorZero, IID_PPV_ARGS(&m_albedo)));
+    auto descAlbedo = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descAlbedo, initialState, &clearColorZero, IID_PPV_ARGS(&m_albedo)));
 
     // 2. Normal + Metallic (R16G16B16A16_FLOAT) - 法線需要負值，所以用 FLOAT
     D3D12_CLEAR_VALUE clearNormal = {};
     clearNormal.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
     clearNormal.Color[0] = 0.0f; clearNormal.Color[1] = 0.0f; clearNormal.Color[2] = 0.0f; clearNormal.Color[3] = 0.0f;
-    auto descNormal = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R16G16B16A16_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descNormal, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearNormal, IID_PPV_ARGS(&m_normal)));
+    auto descNormal = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R16G16B16A16_FLOAT, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descNormal, initialState, &clearNormal, IID_PPV_ARGS(&m_normal)));
 
     // 3. World Position (R32G32B32A32_FLOAT) - 世界座標範圍很大，需要 32-bit FLOAT
     D3D12_CLEAR_VALUE clearPos = {};
     clearPos.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
     clearPos.Color[0] = 0.0f; clearPos.Color[1] = 0.0f; clearPos.Color[2] = 0.0f; clearPos.Color[3] = 0.0f;
-    auto descPos = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R32G32B32A32_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descPos, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearPos, IID_PPV_ARGS(&m_worldPos)));
+    auto descPos = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R32G32B32A32_FLOAT, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descPos, initialState, &clearPos, IID_PPV_ARGS(&m_worldPos)));
 
     // 4. Velocity (R16G16_FLOAT) - 足以存放螢幕 UV 空間的移動向量
     D3D12_CLEAR_VALUE clearVel = {};
     clearVel.Format = DXGI_FORMAT_R16G16_FLOAT;
     clearVel.Color[0] = 0.0f; clearVel.Color[1] = 0.0f; clearVel.Color[2] = 0.0f; clearVel.Color[3] = 0.0f;
-    auto descVel = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R16G16_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descVel, D3D12_RESOURCE_STATE_RENDER_TARGET, &clearVel, IID_PPV_ARGS(&m_velocity)));
+    auto descVel = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R16G16_FLOAT, width, height, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+    CHECK(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descVel, initialState, &clearVel, IID_PPV_ARGS(&m_velocity)));
 }
 
 void GBuffer::CreateHeapsAndViews(ID3D12Device* device) {
