@@ -4,6 +4,8 @@
 #include "Scene.h"
 #include "GBuffer.h"
 #include "IRenderPass.h"
+#include "TemporalDenoiserPass.h"
+#include "SpatialDenoiserPass.h"
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -40,6 +42,20 @@ public:
     void SetRayTracingEnabled(bool enable) { m_rayTracingEnabled = enable; }
 
 private:
+    UINT m_frameCount = 0;
+    DirectX::XMMATRIX m_prevView = DirectX::XMMatrixIdentity();
+    DirectX::XMMATRIX m_prevProj = DirectX::XMMatrixIdentity();
+    DirectX::XMMATRIX m_prevUnjitteredProj = DirectX::XMMatrixIdentity();
+
+    // 全域相機常數緩衝區結構
+    struct PassConstants {
+        DirectX::XMFLOAT4X4 viewProj;
+        DirectX::XMFLOAT4X4 unjitteredViewProj;
+        DirectX::XMFLOAT4X4 prevUnjitteredViewProj;
+    };
+    ComPtr<ID3D12Resource> m_passCameraCB;
+    PassConstants* m_mappedPassCameraCB = nullptr;
+
     void UpdateLightBuffer();
 
     bool m_rayTracingEnabled = false;
@@ -50,7 +66,7 @@ private:
 
     struct LightBufferData {
         int numLights;
-        float _pad[3];
+        DirectX::XMFLOAT3 cameraPos;
         struct Light {
             int type; float intensity; float coneAngle; float _pad1;
             float color[3]; float _pad2;
@@ -66,6 +82,8 @@ private:
     std::unique_ptr<IRenderPass> m_lightPass;
     std::unique_ptr<IRenderPass> m_transparentPass;
     std::unique_ptr<IRenderPass> m_rayTracingPass;
+    std::unique_ptr<TemporalDenoiserPass> m_temporalDenoiserPass;
+    std::unique_ptr<SpatialDenoiserPass> m_spatialDenoiserPass;
 
     std::atomic<bool> m_isShuttingDown{ false };
     std::atomic<int>   m_statVertices{ 0 };

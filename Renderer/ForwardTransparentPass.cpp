@@ -4,17 +4,18 @@
 void ForwardTransparentPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 fwdSrvRange;
     fwdSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
-    CD3DX12_ROOT_PARAMETER1 fwdParams[3];
-    fwdParams[0].InitAsConstants(sizeof(SceneConstants) / 4, 0);
-    fwdParams[1].InitAsDescriptorTable(1, &fwdSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
-    fwdParams[2].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    CD3DX12_ROOT_PARAMETER1 fwdParams[4];
+    fwdParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: 相機
+    fwdParams[1].InitAsConstants(16, 2, 0, D3D12_SHADER_VISIBILITY_VERTEX);                                       // b2: Model Matrix (避開 b1 燈光)
+    fwdParams[2].InitAsDescriptorTable(1, &fwdSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);                           // t0: Textures
+    fwdParams[3].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);  // b1: LightCB
 
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_ANISOTROPIC);
     sampler.MaxAnisotropy = 16;
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC fwdRsDesc;
-    fwdRsDesc.Init_1_1(3, fwdParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    fwdRsDesc.Init_1_1(4, fwdParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     ComPtr<ID3DBlob> sigBlob, errBlob;
     D3DX12SerializeVersionedRootSignature(&fwdRsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
@@ -70,7 +71,8 @@ void ForwardTransparentPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderP
     cmdList->OMSetRenderTargets(1, &backBufferRTV, FALSE, &dsv);
 
     cmdList->SetGraphicsRootSignature(m_rootSig.Get());
-    cmdList->SetGraphicsRootConstantBufferView(2, ctx.lightCB->GetGPUVirtualAddress());
+    cmdList->SetGraphicsRootConstantBufferView(0, ctx.passCameraCBAddress); // b0
+    cmdList->SetGraphicsRootConstantBufferView(3, ctx.lightCB->GetGPUVirtualAddress()); // b1
     cmdList->SetPipelineState(m_pso.Get());
 
     auto device = ctx.gfx->GetDevice();
@@ -97,13 +99,9 @@ void ForwardTransparentPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderP
             if (node.subMeshIndices.empty()) continue;
 
             XMMATRIX modelMat = globalTransforms[n];
-            SceneConstants cb = {};
-            XMStoreFloat4x4(&cb.mvp, XMMatrixTranspose(modelMat * ctx.view * ctx.proj));
-            XMStoreFloat4x4(&cb.modelMatrix, XMMatrixTranspose(modelMat));
-            XMStoreFloat4x4(&cb.normalMatrix, XMMatrixInverse(nullptr, modelMat));
-            XMStoreFloat3(&cb.lightDir, XMVector3Normalize(ctx.forward));
-            cb.cameraPos = ctx.scene->GetCameraPos();
-            cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstants) / 4, &cb, 0);
+            XMFLOAT4X4 modelFloat4x4;
+            XMStoreFloat4x4(&modelFloat4x4, XMMatrixTranspose(modelMat));
+            cmdList->SetGraphicsRoot32BitConstants(1, 16, &modelFloat4x4, 0); // b2
 
             for (int subIdx : node.subMeshIndices) {
                 const auto& sub = mesh->subMeshes[subIdx];
@@ -111,7 +109,7 @@ void ForwardTransparentPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderP
 
                 int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < (int)mesh->texturePaths.size()) ? sub.materialIndex : 0;
                 CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(inst.srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, srvDescSize);
-                cmdList->SetGraphicsRootDescriptorTable(1, srvHandle);
+                cmdList->SetGraphicsRootDescriptorTable(2, srvHandle); // Textures
                 cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
                 ctx.currentDrawCalls++;
             }

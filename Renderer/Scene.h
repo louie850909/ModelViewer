@@ -7,13 +7,9 @@
 
 struct SceneConstants {
     DirectX::XMFLOAT4X4 mvp;
-    DirectX::XMFLOAT4X4 modelMatrix;
-    DirectX::XMFLOAT4X4 normalMatrix;
-    DirectX::XMFLOAT3   cameraPos;
-    float               _pad1;
-    DirectX::XMFLOAT3   lightDir;
-    float               _pad2;
-    DirectX::XMFLOAT4   baseColor;
+    DirectX::XMFLOAT4X4 unjitteredMvp;
+    DirectX::XMFLOAT4X4 prevUnjitteredMvp;
+    DirectX::XMFLOAT4X4 model;
 };
 
 struct LightNode {

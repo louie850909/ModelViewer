@@ -4,16 +4,17 @@
 void GeometryPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 geomSrvRange;
     geomSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
-    CD3DX12_ROOT_PARAMETER1 geomParams[2];
-    geomParams[0].InitAsConstants(sizeof(SceneConstants) / 4, 0);
-    geomParams[1].InitAsDescriptorTable(1, &geomSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    CD3DX12_ROOT_PARAMETER1 geomParams[3];
+    geomParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: 全域相機 (2 DWORDs)
+    geomParams[1].InitAsConstants(16, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);                                       // b1: Model Matrix (16 DWORDs)
+    geomParams[2].InitAsDescriptorTable(1, &geomSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);                          // t0: Textures (1 DWORD)
 
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_ANISOTROPIC);
     sampler.MaxAnisotropy = 16;
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC geomRsDesc;
-    geomRsDesc.Init_1_1(2, geomParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    geomRsDesc.Init_1_1(3, geomParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
     ComPtr<ID3DBlob> sigBlob, errBlob;
     D3DX12SerializeVersionedRootSignature(&geomRsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
     device->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&m_rootSig));
@@ -39,30 +40,41 @@ void GeometryPass::Init(ID3D12Device* device) {
     geomPsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     geomPsoDesc.SampleMask = UINT_MAX;
     geomPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    geomPsoDesc.NumRenderTargets = 3;
+    geomPsoDesc.NumRenderTargets = 4;
     geomPsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     geomPsoDesc.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
     geomPsoDesc.RTVFormats[2] = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    geomPsoDesc.RTVFormats[3] = DXGI_FORMAT_R16G16_FLOAT;
     geomPsoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
     geomPsoDesc.SampleDesc.Count = 1;
     device->CreateGraphicsPipelineState(&geomPsoDesc, IID_PPV_ARGS(&m_pso));
 }
 
 void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext& ctx) {
+    // == 將 GBuffer 從 SRV 轉回 RTV ==
+    D3D12_RESOURCE_BARRIER barriersToRTV[4] = {
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetAlbedo(),   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetNormal(),   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetWorldPos(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetVelocity(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET)
+    };
+    cmdList->ResourceBarrier(4, barriersToRTV);
+
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferRTVs = ctx.gbuffer->GetRtvStart();
     D3D12_CPU_DESCRIPTOR_HANDLE dsv = ctx.gfx->GetDSV();
-    cmdList->OMSetRenderTargets(3, &gbufferRTVs, TRUE, &dsv);
+    cmdList->OMSetRenderTargets(4, &gbufferRTVs, TRUE, &dsv);
 
     float clearGBuffer[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(gbufferRTVs);
     auto device = ctx.gfx->GetDevice();
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
         cmdList->ClearRenderTargetView(rtvHandle, clearGBuffer, 0, nullptr);
         rtvHandle.Offset(1, device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
     }
     cmdList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     cmdList->SetGraphicsRootSignature(m_rootSig.Get());
+    cmdList->SetGraphicsRootConstantBufferView(0, ctx.passCameraCBAddress);
     cmdList->SetPipelineState(m_pso.Get());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
@@ -90,13 +102,9 @@ void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext
             if (node.subMeshIndices.empty()) continue;
 
             XMMATRIX modelMat = globalTransforms[n];
-            SceneConstants cb = {};
-            XMStoreFloat4x4(&cb.mvp, XMMatrixTranspose(modelMat * ctx.view * ctx.proj));
-            XMStoreFloat4x4(&cb.modelMatrix, XMMatrixTranspose(modelMat));
-            XMStoreFloat4x4(&cb.normalMatrix, XMMatrixInverse(nullptr, modelMat));
-            XMStoreFloat3(&cb.lightDir, XMVector3Normalize(ctx.forward));
-            cb.cameraPos = ctx.scene->GetCameraPos();
-            cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstants) / 4, &cb, 0);
+            XMFLOAT4X4 modelFloat4x4;
+            XMStoreFloat4x4(&modelFloat4x4, XMMatrixTranspose(modelMat));
+            cmdList->SetGraphicsRoot32BitConstants(1, 16, &modelFloat4x4, 0); // 迴圈內只傳 16 個 float
 
             for (int subIdx : node.subMeshIndices) {
                 const auto& sub = mesh->subMeshes[subIdx];
@@ -104,7 +112,7 @@ void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext
 
                 int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < (int)mesh->texturePaths.size()) ? sub.materialIndex : 0;
                 CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(inst.srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, srvDescSize);
-                cmdList->SetGraphicsRootDescriptorTable(1, srvHandle);
+                cmdList->SetGraphicsRootDescriptorTable(2, srvHandle);
                 cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
                 ctx.currentDrawCalls++;
             }
@@ -113,10 +121,11 @@ void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext
         ctx.totalPolys += (int)mesh->indices.size() / 3;
     }
 
-    D3D12_RESOURCE_BARRIER barriersToSRV[3] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetAlbedo(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetNormal(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetWorldPos(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+    D3D12_RESOURCE_BARRIER barriersToSRV[4] = {
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetAlbedo(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetNormal(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetWorldPos(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
+        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetVelocity(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
     };
-    cmdList->ResourceBarrier(3, barriersToSRV);
+    cmdList->ResourceBarrier(4, barriersToSRV);
 }

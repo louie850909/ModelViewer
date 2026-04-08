@@ -1,18 +1,6 @@
 #include "PBRCommon.hlsli"
 #include "LightDef.hlsli"
 
-cbuffer SceneConstants : register(b0)
-{
-    matrix mvp;
-    matrix modelMatrix;
-    matrix normalMatrix;
-    float3 cameraPos;
-    float _pad1;
-    float3 lightDir;
-    float _pad2;
-    float4 baseColor;
-};
-
 struct VSOutput
 {
     float4 pos : SV_Position;

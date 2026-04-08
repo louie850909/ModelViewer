@@ -69,6 +69,15 @@
     <ClInclude Include="RayTracingPass.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="TemporalDenoiserPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="SpatialDenoiserPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Helper.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -104,6 +113,12 @@
     <ClCompile Include="RayTracingPass.cpp">
       <Filter>ソース ファイル\RenderPass</Filter>
     </ClCompile>
+    <ClCompile Include="TemporalDenoiserPass.cpp">
+      <Filter>ソース ファイル\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="SpatialDenoiserPass.cpp">
+      <Filter>ソース ファイル\RenderPass</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -128,6 +143,12 @@
       <Filter>Shaders</Filter>
     </CustomBuild>
     <CustomBuild Include="shaders\Raytracing.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="shaders\TemporalAccumulation.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="shaders\SpatialFilter.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
   </ItemGroup>

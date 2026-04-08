@@ -32,7 +32,7 @@ private:
     struct CameraParams {
         DirectX::XMFLOAT4X4 viewProjInv;
         DirectX::XMFLOAT3 cameraPos;
-        float pad;
+        UINT frameCount;
     };
     CameraParams* m_mappedCameraCB = nullptr;
 

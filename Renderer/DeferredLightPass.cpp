@@ -4,16 +4,15 @@
 void DeferredLightPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 lightSrvRange;
     lightSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
-    CD3DX12_ROOT_PARAMETER1 lightParams[3];
-    lightParams[0].InitAsConstants(sizeof(SceneConstants) / 4, 0);
-    lightParams[1].InitAsDescriptorTable(1, &lightSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
-    lightParams[2].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    CD3DX12_ROOT_PARAMETER1 lightParams[2];
+    lightParams[0].InitAsDescriptorTable(1, &lightSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    lightParams[1].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
 
     CD3DX12_STATIC_SAMPLER_DESC lightSampler(0, D3D12_FILTER_MIN_MAG_MIP_POINT);
     lightSampler.AddressU = lightSampler.AddressV = lightSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC lightRsDesc;
-    lightRsDesc.Init_1_1(3, lightParams, 1, &lightSampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    lightRsDesc.Init_1_1(2, lightParams, 1, &lightSampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     ComPtr<ID3DBlob> sigBlob, errBlob;
     D3DX12SerializeVersionedRootSignature(&lightRsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
@@ -51,21 +50,9 @@ void DeferredLightPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassCo
     ID3D12DescriptorHeap* gbufferHeaps[] = { ctx.gbuffer->GetSrvHeap() };
     cmdList->SetDescriptorHeaps(1, gbufferHeaps);
 
-    SceneConstants lightCb = {};
-    lightCb.cameraPos = ctx.scene->GetCameraPos();
-    XMStoreFloat3(&lightCb.lightDir, XMVector3Normalize(ctx.forward));
-
-    cmdList->SetGraphicsRoot32BitConstants(0, sizeof(SceneConstants) / 4, &lightCb, 0);
-    cmdList->SetGraphicsRootConstantBufferView(2, ctx.lightCB->GetGPUVirtualAddress());
-    cmdList->SetGraphicsRootDescriptorTable(1, ctx.gbuffer->GetSrvStart());
+    cmdList->SetGraphicsRootDescriptorTable(0, ctx.gbuffer->GetSrvStart());
+    cmdList->SetGraphicsRootConstantBufferView(1, ctx.lightCB->GetGPUVirtualAddress());
 
     cmdList->DrawInstanced(3, 1, 0, 0);
     ctx.currentDrawCalls++;
-
-    D3D12_RESOURCE_BARRIER barriersToRTV[3] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetAlbedo(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetNormal(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetWorldPos(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET)
-    };
-    cmdList->ResourceBarrier(3, barriersToRTV);
 }

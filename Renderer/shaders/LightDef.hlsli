@@ -18,7 +18,7 @@ struct Light
 cbuffer LightBuffer : register(b1)
 {
     int numLights;
-    float3 _pad_lb;
+    float3 cameraPos;
     Light lights[16];
 };
 

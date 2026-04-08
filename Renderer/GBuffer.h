@@ -12,6 +12,7 @@ public:
     ID3D12Resource* GetAlbedo() const { return m_albedo.Get(); }
     ID3D12Resource* GetNormal() const { return m_normal.Get(); }
     ID3D12Resource* GetWorldPos() const { return m_worldPos.Get(); }
+    ID3D12Resource* GetVelocity() const { return m_velocity.Get(); }
 
     // 取得 Descriptor Heaps
     ID3D12DescriptorHeap* GetRtvHeap() const { return m_rtvHeap.Get(); }
@@ -27,7 +28,7 @@ public:
         return m_srvHeap->GetGPUDescriptorHandleForHeapStart();
     }
 
-    static constexpr int TargetCount = 3;
+    static constexpr int TargetCount = 4;
 
 private:
     void CreateResources(ID3D12Device* device, int width, int height);
@@ -36,6 +37,7 @@ private:
     ComPtr<ID3D12Resource> m_albedo;    // RT0: RGB = Albedo, A = Roughness
     ComPtr<ID3D12Resource> m_normal;    // RT1: RGB = Normal, A = Metallic
     ComPtr<ID3D12Resource> m_worldPos;  // RT2: RGB = WorldPos, A = Custom
+    ComPtr<ID3D12Resource> m_velocity;  // RT3: RG = Velocity (螢幕空間向量)
 
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
     ComPtr<ID3D12DescriptorHeap> m_srvHeap;

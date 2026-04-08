@@ -3,7 +3,7 @@
 
 void RayTracingPass::CreateRootSignature(ID3D12Device5* device) {
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
-    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
     // 無限制大小的 SRV 陣列 (t0, space2)
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
@@ -64,7 +64,8 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 
     // 3. Shader Config (Payload 大小)
     D3D12_RAYTRACING_SHADER_CONFIG shaderConfig = {};
-    shaderConfig.MaxPayloadSizeInBytes = 16; // float4 color
+    // 將 Payload 擴大到 32 Bytes (radiance 12 + throughput 12 + depth 4 + seed 4)
+    shaderConfig.MaxPayloadSizeInBytes = 32;
     shaderConfig.MaxAttributeSizeInBytes = 8; // float2 barycentrics
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG, &shaderConfig };
 
@@ -74,7 +75,7 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 
     // 5. Pipeline Config (最大遞迴深度)
     D3D12_RAYTRACING_PIPELINE_CONFIG pipelineConfig = {};
-    pipelineConfig.MaxTraceRecursionDepth = 2;
+    pipelineConfig.MaxTraceRecursionDepth = 3; // Primary + Bounce + Shadow
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, &pipelineConfig };
 
     // Local Root Signature
@@ -138,15 +139,34 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
         auto& mesh = inst.mesh;
         if (!mesh || mesh->blasBuffers.empty()) continue;
 
-        // 複製此 Mesh 的所有材質貼圖到 Global Heap
+        // 將貼圖 SRV 直接建立到 Global Heap 中
         std::vector<UINT> matToGlobalIdx;
-        if (inst.srvHeap) {
-            UINT numMats = (UINT)mesh->texturePaths.size();
-            if (numMats == 0) numMats = 1; // 至少會有一個預設材質
-            for (UINT m = 0; m < numMats; ++m) {
-                CD3DX12_CPU_DESCRIPTOR_HANDLE srcHandle(inst.srvHeap->GetCPUDescriptorHandleForHeapStart(), m * 2, srvDescSize);
-                device->CopyDescriptorsSimple(1, destHandle, srcHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-                matToGlobalIdx.push_back(destHeapIndex - 1); // 記錄相對於 Unbounded Array (從1開始) 的內部索引
+        UINT numMats = (UINT)mesh->texturePaths.size();
+        if (numMats == 0) numMats = 1; // 至少會有一個預設材質
+
+        for (UINT m = 0; m < numMats; ++m) {
+            matToGlobalIdx.push_back(destHeapIndex - 1); // 記錄相對於 Unbounded Array (從1開始) 的內部索引
+
+            // 每個材質包含 BaseColor 與 MetallicRoughness (2 張貼圖)
+            for (int t = 0; t < 2; ++t) {
+                int texIdx = m * 2 + t;
+                if (texIdx < (int)inst.textures.size() && inst.textures[texIdx]) {
+                    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+                    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                    sv.Format = inst.textures[texIdx]->GetDesc().Format;
+                    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                    sv.Texture2D.MipLevels = inst.textures[texIdx]->GetDesc().MipLevels;
+                    device->CreateShaderResourceView(inst.textures[texIdx].Get(), &sv, destHandle);
+                }
+                else {
+                    // 若材質缺失，填入空 SRV 避免 Crash
+                    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
+                    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                    sv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                    sv.Texture2D.MipLevels = 1;
+                    device->CreateShaderResourceView(nullptr, &sv, destHandle);
+                }
                 destHandle.Offset(1, srvDescSize);
                 destHeapIndex++;
             }
@@ -339,6 +359,7 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     XMVECTOR det;
     XMStoreFloat4x4(&m_mappedCameraCB->viewProjInv, XMMatrixTranspose(XMMatrixInverse(&det, viewProj)));
     m_mappedCameraCB->cameraPos = ctx.scene->GetCameraPos();
+    m_mappedCameraCB->frameCount = ctx.frameCount;
 
     // 綁定 Root 參數
     cmdList4->SetComputeRootDescriptorTable(0, m_descriptorHeap->GetGPUDescriptorHandleForHeapStart()); // UAV
@@ -371,22 +392,6 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
 
     // 發射！
     cmdList4->DispatchRays(&rayDesc);
-
-    // ==========================================
-    // 準備複製到 BackBuffer
-    // ==========================================
-    auto backBuffer = ctx.gfx->GetCurrentBackBuffer();
-    D3D12_RESOURCE_BARRIER preCopy[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST),
-        CD3DX12_RESOURCE_BARRIER::Transition(m_raytracingOutput.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE)
-    };
-    cmdList->ResourceBarrier(2, preCopy);
-
-    cmdList->CopyResource(backBuffer, m_raytracingOutput.Get());
-
-    D3D12_RESOURCE_BARRIER postCopy[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        CD3DX12_RESOURCE_BARRIER::Transition(m_raytracingOutput.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-    };
-    cmdList->ResourceBarrier(2, postCopy);
+    // // 將原始輸出交給 Context，讓下一個 Pass (Denoiser) 接手
+    ctx.rawRaytracingOutput = m_raytracingOutput.Get();
 }

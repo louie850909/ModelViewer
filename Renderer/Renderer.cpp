@@ -4,6 +4,7 @@
 #include "DeferredLightPass.h"
 #include "ForwardTransparentPass.h"
 #include "RayTracingPass.h"
+#include "Helper.h"
 #include <stdexcept>
 #include <filesystem>
 #include <string>
@@ -28,20 +29,33 @@ bool Renderer::Init(IUnknown* panelUnknown, int width, int height) {
         m_ctx.GetDevice()->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &cbDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_lightCB));
         m_lightCB->Map(0, nullptr, (void**)&m_mappedLightCB);
 
+        auto cbDescPass = CD3DX12_RESOURCE_DESC::Buffer((sizeof(PassConstants) + 255) & ~255);
+        m_ctx.GetDevice()->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &cbDescPass, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_passCameraCB));
+        m_passCameraCB->Map(0, nullptr, (void**)&m_mappedPassCameraCB);
+
         m_gBuffer.Init(m_ctx.GetDevice(), width, height);
 
         // 實例化與初始化各渲染階段 (Passes)
         m_geomPass = std::make_unique<GeometryPass>();
         m_lightPass = std::make_unique<DeferredLightPass>();
         m_transparentPass = std::make_unique<ForwardTransparentPass>();
-		if (m_ctx.IsDxrSupported())
+        if (m_ctx.IsDxrSupported())
+        {
             m_rayTracingPass = std::make_unique<RayTracingPass>();
+            m_temporalDenoiserPass = std::make_unique<TemporalDenoiserPass>();
+            m_spatialDenoiserPass = std::make_unique<SpatialDenoiserPass>();
+        }
 
         m_geomPass->Init(m_ctx.GetDevice());
         m_lightPass->Init(m_ctx.GetDevice());
         m_transparentPass->Init(m_ctx.GetDevice());
-		if (m_rayTracingPass)
-            m_rayTracingPass->Init(m_ctx.GetDevice());
+		if (m_rayTracingPass) m_rayTracingPass->Init(m_ctx.GetDevice());
+        if (m_temporalDenoiserPass) m_temporalDenoiserPass->Init(m_ctx.GetDevice());
+        if (m_spatialDenoiserPass)
+        {
+            m_spatialDenoiserPass->SetTemporalPass(m_temporalDenoiserPass.get()); // 綁定關聯
+            m_spatialDenoiserPass->Init(m_ctx.GetDevice());
+        }
 
         m_lastFrameTime = std::chrono::high_resolution_clock::now();
         return true;
@@ -79,6 +93,7 @@ void Renderer::GetStats(int& vertices, int& polygons, int& drawCalls, float& fra
 
 void Renderer::UpdateLightBuffer() {
     m_mappedLightCB->numLights = (int)m_scene.GetLights().size();
+    m_mappedLightCB->cameraPos = m_scene.GetCameraPos();
     for (size_t i = 0; i < m_scene.GetLights().size() && i < 16; ++i) {
         const auto& l = m_scene.GetLights()[i];
         m_mappedLightCB->lights[i].type = l.type;
@@ -135,15 +150,68 @@ void Renderer::RenderFrame() {
     passCtx.lightCB = m_lightCB.Get();
     passCtx.forward = XMVector3TransformNormal(XMVectorSet(0, 0, 1, 0), rotation);
     passCtx.view = XMMatrixLookAtLH(eye, eye + passCtx.forward, XMVectorSet(0, 1, 0, 0));
-    passCtx.proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.f), vp.Width / vp.Height, 0.1f, 5000.f);
 
+    // 1. 計算無 Jitter 投影矩陣
+    passCtx.unjitteredProj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.f), vp.Width / vp.Height, 0.1f, 5000.f);
+
+    // 判斷是否需要啟用 Jitter (只有在光追/Temporal Pass 開啟時才需要)
+    bool useTemporalJitter = (m_rayTracingEnabled && m_ctx.IsDxrSupported());
+
+    if (useTemporalJitter) {
+        // 2. 產生 Jitter 偏移
+        int jitterPhaseCount = 16;
+        int jitterIndex = (m_frameCount % jitterPhaseCount) + 1;
+        passCtx.jitterX = Helper::CreateHaltonSequence(jitterIndex, 2) - 0.5f;
+        passCtx.jitterY = Helper::CreateHaltonSequence(jitterIndex, 3) - 0.5f;
+
+        float ndcJitterX = (passCtx.jitterX * 2.0f) / vp.Width;
+        float ndcJitterY = (passCtx.jitterY * 2.0f) / vp.Height;
+
+        // 3. 套用 Jitter 到最終投影矩陣
+        XMFLOAT4X4 projFloat4x4;
+        XMStoreFloat4x4(&projFloat4x4, passCtx.unjitteredProj);
+        projFloat4x4._31 += ndcJitterX;
+        projFloat4x4._32 += ndcJitterY;
+        passCtx.proj = XMLoadFloat4x4(&projFloat4x4);
+    }
+    else {
+        // 傳統管線：不套用 Jitter，直接使用原始投影矩陣
+        passCtx.jitterX = 0.0f;
+        passCtx.jitterY = 0.0f;
+        passCtx.proj = passCtx.unjitteredProj;
+    }
+
+    passCtx.frameCount = m_frameCount++;
+
+    // 4. 處理上一幀歷史紀錄
+    if (passCtx.frameCount == 0) { // 第一幀
+        m_prevView = passCtx.view;
+        m_prevProj = passCtx.proj;
+        m_prevUnjitteredProj = passCtx.unjitteredProj;
+    }
+    passCtx.prevView = m_prevView;
+    passCtx.prevProj = m_prevProj;
+    passCtx.prevUnjitteredProj = m_prevUnjitteredProj;
+
+    // 5. 計算並寫入 PassConstants
+    XMMATRIX viewProj = passCtx.view * passCtx.proj;
+    XMMATRIX unjitteredViewProj = passCtx.view * passCtx.unjitteredProj;
+    XMMATRIX prevUnjitteredVP = passCtx.prevView * passCtx.prevUnjitteredProj;
+
+    XMStoreFloat4x4(&m_mappedPassCameraCB->viewProj, XMMatrixTranspose(viewProj));
+    XMStoreFloat4x4(&m_mappedPassCameraCB->unjitteredViewProj, XMMatrixTranspose(unjitteredViewProj));
+    XMStoreFloat4x4(&m_mappedPassCameraCB->prevUnjitteredViewProj, XMMatrixTranspose(prevUnjitteredVP));
+    passCtx.passCameraCBAddress = m_passCameraCB->GetGPUVirtualAddress();
+
+    m_geomPass->Execute(cmdList, passCtx);
     if (m_rayTracingEnabled && m_ctx.IsDxrSupported()) {
         // 進入光線追蹤管線
         m_rayTracingPass->Execute(cmdList, passCtx);
+        m_temporalDenoiserPass->Execute(cmdList, passCtx);
+        m_spatialDenoiserPass->Execute(cmdList, passCtx);
     }
     else {
         // 進入傳統光柵化管線
-        m_geomPass->Execute(cmdList, passCtx);
         m_lightPass->Execute(cmdList, passCtx);
         m_transparentPass->Execute(cmdList, passCtx);
     }
@@ -153,6 +221,10 @@ void Renderer::RenderFrame() {
     m_statDrawCalls.store(passCtx.currentDrawCalls, std::memory_order_relaxed);
 
     m_ctx.ExecuteCommandListAndPresent();
+
+    m_prevView = passCtx.view;
+    m_prevProj = passCtx.proj;
+    m_prevUnjitteredProj = passCtx.unjitteredProj;
     m_renderMutex.unlock();
 }
 
@@ -226,7 +298,7 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     UINT64 ibSize = mesh->indices.size() * sizeof(uint32_t);
 
     auto vbDesc = CD3DX12_RESOURCE_DESC::Buffer(vbSize);
-    device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &vbDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&mesh->vertexBuffer));
+    device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &vbDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&mesh->vertexBuffer));
     device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &vbDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&inst.vbUpload));
 
     void* mapped;
@@ -235,7 +307,7 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     inst.vbUpload->Unmap(0, nullptr);
 
     auto ibDesc = CD3DX12_RESOURCE_DESC::Buffer(ibSize);
-    device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &ibDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&mesh->indexBuffer));
+    device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &ibDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&mesh->indexBuffer));
     device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE, &ibDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&inst.ibUpload));
 
     inst.ibUpload->Map(0, nullptr, &mapped);
@@ -248,8 +320,8 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     cmdList->CopyResource(mesh->vertexBuffer.Get(), inst.vbUpload.Get());
     cmdList->CopyResource(mesh->indexBuffer.Get(), inst.ibUpload.Get());
     D3D12_RESOURCE_BARRIER barriers[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(mesh->vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER),
-        CD3DX12_RESOURCE_BARRIER::Transition(mesh->indexBuffer.Get(),  D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER),
+        CD3DX12_RESOURCE_BARRIER::Transition(mesh->vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ),
+        CD3DX12_RESOURCE_BARRIER::Transition(mesh->indexBuffer.Get(),  D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ),
     };
     cmdList->ResourceBarrier(2, barriers);
 
@@ -294,7 +366,7 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
             auto scratchDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
             auto blasDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ResultDataMaxSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
-            device5->CreateCommittedResource(&defaultHeapForBlas, D3D12_HEAP_FLAG_NONE, &scratchDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&scratchBuffers[i]));
+            device5->CreateCommittedResource(&defaultHeapForBlas, D3D12_HEAP_FLAG_NONE, &scratchDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&scratchBuffers[i]));
             device5->CreateCommittedResource(&defaultHeapForBlas, D3D12_HEAP_FLAG_NONE, &blasDesc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, nullptr, IID_PPV_ARGS(&mesh->blasBuffers[i]));
 
             D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
