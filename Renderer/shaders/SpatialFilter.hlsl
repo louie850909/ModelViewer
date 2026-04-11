@@ -3,15 +3,13 @@ cbuffer Constants : register(b0)
     uint width;
     uint height;
     uint stepSize;
-    uint passIndex; // 當前是第幾個 Pass
-    uint isLastPass; // 1 表示最後一個 Pass，0 則否
+    uint passIndex;
+    uint isLastPass;
 };
 
-// 雙輸出
 RWTexture2D<float4> OutputDiffuse : register(u0);
 RWTexture2D<float4> OutputSpecular : register(u1);
 
-// 雙輸入 + 幾何材質資訊
 Texture2D<float4> InputDiffuse : register(t0);
 Texture2D<float4> InputSpecular : register(t1);
 Texture2D<float4> NormalMap : register(t2);
@@ -28,8 +26,10 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float centerRoughness = max(NormalMap[DTid.xy].w, 0.01f);
     float3 centerPos = WorldPosMap[DTid.xy].xyz;
     float3 centerAlbedo = max(AlbedoMap[DTid.xy].rgb, 0.001f);
-    
-    // 如果打到天空，略過降噪與解調直接輸出
+
+    // ★ 新增：計算中心像素的 Albedo Luma，用於邊界保護
+    float centerLuma = dot(centerAlbedo, float3(0.2126f, 0.7152f, 0.0722f));
+
     if (length(centerNormal) < 0.1f)
     {
         OutputDiffuse[DTid.xy] = InputDiffuse[DTid.xy];
@@ -42,22 +42,19 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float4 sumSpecular = 0.0f;
     float sumWeightSpecular = 0.0f;
 
-    // 半徑為 2，在 À-Trous 中代表 5x5 的卷積矩陣
     const int radius = 2;
-    
+
     for (int y = -radius; y <= radius; ++y)
     {
         for (int x = -radius; x <= radius; ++x)
         {
-            // 將基礎座標偏移乘上 stepSize 實現範圍膨脹
             int2 offset = int2(x, y) * stepSize;
-            int2 samplePos = clamp(int2(DTid.xy) + offset, int2(0, 0), int2(width - 1, height - 1));
+            int2 samplePos = clamp(int2(DTid.xy) + offset,
+                                   int2(0, 0), int2(width - 1, height - 1));
 
             float4 sampleDiff = InputDiffuse[samplePos];
             float4 sampleSpec = InputSpecular[samplePos];
-            
-            // // 漫反射要除法解調 (Demodulation)
-            // 如果是第一個 Pass，從輸入的帶紋理光照中「剔除」紋理，轉換為純淨光照
+
             if (passIndex == 0)
             {
                 sampleDiff.rgb /= max(AlbedoMap[samplePos].rgb, 0.001f);
@@ -66,26 +63,28 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             float3 sampleNormal = NormalMap[samplePos].xyz;
             float3 samplePosWorld = WorldPosMap[samplePos].xyz;
 
-            // 權重計算保持不變
             float spatialWeight = exp(-(x * x + y * y) / 4.5f);
 
-            // 法線權重 (法線差異過大代表轉角或不同面，停止模糊)
             float normalWeight = pow(max(0.0f, dot(centerNormal, sampleNormal)), 64.0f);
 
-            // 深度/平面權重 (最強大的改進：將距離投影到法線上)
-            // 這讓我們在同一個平坦表面上即使採樣跨度很大，平面距離也幾乎為 0，允許盡情模糊；
-            // 但只要稍微跨出邊緣或遇到凹凸，權重就會瞬間暴跌至 0。
             float planeDist = abs(dot(centerNormal, centerPos - samplePosWorld));
             float posWeight = exp(-planeDist * 10.0f);
 
-            float diffW = spatialWeight * normalWeight * posWeight;
-            
-            // 粗糙度引導 (Roughness-Guided) 權重
-            // 若粗糙度趨近 0，分母極小，非中心的權重會瞬間跌落至 0 (保留銳利鏡面)
-            // 若粗糙度越高，權重衰減越慢，允許大範圍模糊
-            float roughnessWeight = exp(-(x * x + y * y) / max(centerRoughness * centerRoughness * 10.0f, 0.05f));
+            // ★ 新增：Albedo Luma 邊界保護
+            // Luma 差距大 → 跨越紋理邊界 → 大幅降低 Diffuse 模糊權重
+            float sampleLuma = dot(max(AlbedoMap[samplePos].rgb, 0.001f),
+                                   float3(0.2126f, 0.7152f, 0.0722f));
+            float lumaWeight = exp(-abs(centerLuma - sampleLuma) * 20.0f);
+
+            // Diffuse 加入 lumaWeight
+            float diffW = spatialWeight * normalWeight * posWeight * lumaWeight;
+
+            // ★ 修改：roughnessWeight 分母下限從 0.05 提高至 0.10
+            // 防止低粗糙度（光滑）材質的 Specular 被過度模糊
+            float roughnessWeight = exp(-(x * x + y * y) /
+                                        max(centerRoughness * centerRoughness * 10.0f, 0.10f));
             float specW = diffW * roughnessWeight;
-            
+
             sumDiffuse += sampleDiff * diffW;
             sumWeightDiffuse += diffW;
 
@@ -96,21 +95,17 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
 
     float4 finalDiffuse = sumDiffuse / max(sumWeightDiffuse, 0.0001f);
     float4 finalSpecular = sumSpecular / max(sumWeightSpecular, 0.0001f);
-    
+
     if (isLastPass == 1)
     {
-        // 最終合成：Diffuse 乘回 Albedo，並加上根據粗糙度模糊完的高光！
         finalDiffuse.rgb *= centerAlbedo;
         float3 combined = finalDiffuse.rgb + finalSpecular.rgb;
-        
-        // Reinhard Tone Mapping
+
         combined = combined / (combined + float3(1.0f, 1.0f, 1.0f));
-        // Gamma Correction
         combined = pow(combined, float3(1.0f / 2.2f, 1.0f / 2.2f, 1.0f / 2.2f));
-        
+
         OutputDiffuse[DTid.xy] = float4(combined, 1.0f);
-        //OutputDiffuse[DTid.xy] = float4(finalSpecular.rgb * 5.0f, 1.0f); // debug 用：直接輸出模糊後的高光，觀察效果
-        OutputSpecular[DTid.xy] = finalSpecular; // 僅佔位用
+        OutputSpecular[DTid.xy] = finalSpecular;
     }
     else
     {
