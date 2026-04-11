@@ -115,10 +115,10 @@ void TemporalDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPas
     device->CreateShaderResourceView(m_historySpecular[readIdx].Get(), &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
 
     srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    device->CreateShaderResourceView(ctx.gbuffer->GetNormal(), &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
+    device->CreateShaderResourceView(ctx.gbuffer->GetNormalRoughness(), &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
 
     srvDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-    device->CreateShaderResourceView(ctx.gbuffer->GetWorldPos(), &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
+    device->CreateShaderResourceView(ctx.gbuffer->GetWorldPosMetallic(), &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
 
     srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
     device->CreateShaderResourceView(m_historyNormal[readIdx].Get(), &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);

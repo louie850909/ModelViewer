@@ -59,9 +59,9 @@ SamplerState g_sampler : register(s0);
 
 struct PSOutput
 {
-    float4 AlbedoRoughness : SV_Target0;
-    float4 NormalMetallic : SV_Target1;
-    float4 WorldPos : SV_Target2;
+    float4 Albedo : SV_Target0;
+    float4 NormalRoughness : SV_Target1;
+    float4 WorldPosMetallic : SV_Target2;
     float2 Velocity : SV_Target3;
 };
 
@@ -75,9 +75,9 @@ PSOutput PSMain(VSOutput input)
     // 假設 MR 貼圖 G通道=Roughness, B通道=Metallic
     float4 mr = g_mrMap.Sample(g_sampler, input.uv);
     
-    output.AlbedoRoughness = float4(albedo.rgb, mr.g);
-    output.NormalMetallic = float4(normalize(input.normal), mr.b);
-    output.WorldPos = float4(input.worldPos, 1.0f);
+    output.Albedo = float4(albedo.rgba);
+    output.NormalRoughness = float4(normalize(input.normal), mr.g);
+    output.WorldPosMetallic = float4(input.worldPos, mr.b);
     
     // 計算螢幕空間動態向量 (Velocity)
     float2 ndc = input.clipPos.xy / input.clipPos.w;

@@ -3,19 +3,18 @@
 
 void SpatialDenoiserPass::Init(ID3D12Device* device) {
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-    // 4 個 Pass，每個 Pass 需要 1 UAV + 3 SRV = 16 個描述子。開 32 個確保充足。
+    // 4 passes * (2 UAVs + 5 SRVs) = 28。開 32 確保充足。
     heapDesc.NumDescriptors = 32;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_descriptorHeap));
 
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
-    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
+    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
     CD3DX12_ROOT_PARAMETER1 rootParams[3];
-    // 增加一個 Constant 參數供 stepSize 使用
     rootParams[0].InitAsConstants(5, 0);
     rootParams[1].InitAsDescriptorTable(1, &uavRange);
     rootParams[2].InitAsDescriptorTable(1, &srvRange);
@@ -36,7 +35,7 @@ void SpatialDenoiserPass::Init(ID3D12Device* device) {
 }
 
 void SpatialDenoiserPass::EnsureResources(ID3D12Device* device, int width, int height) {
-    if (m_width == width && m_height == height && m_pingPongBuffers[0] != nullptr) return;
+    if (m_width == width && m_height == height && m_pingPongDiffuse[0] != nullptr) return;
     m_width = width; m_height = height;
 
     auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -44,8 +43,10 @@ void SpatialDenoiserPass::EnsureResources(ID3D12Device* device, int width, int h
     desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
     for (int i = 0; i < 2; ++i) {
-        m_pingPongBuffers[i].Reset();
-        device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_pingPongBuffers[i]));
+        m_pingPongDiffuse[i].Reset();
+        m_pingPongSpecular[i].Reset();
+        device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_pingPongDiffuse[i]));
+        device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_pingPongSpecular[i]));
     }
 }
 
@@ -54,19 +55,24 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
     auto device = ctx.gfx->GetDevice();
     EnsureResources(device, ctx.gfx->GetWidth(), ctx.gfx->GetHeight());
 
-    auto inputGI = m_temporalPass->GetDenoisedDiffuse();
-    auto normalMap = ctx.gbuffer->GetNormal();
-    auto worldPosMap = ctx.gbuffer->GetWorldPos();
+    // 接收來自 Temporal Pass 的雙軌乾淨歷史
+    auto inputDiffuse = m_temporalPass->GetDenoisedDiffuse();
+    auto inputSpecular = m_temporalPass->GetDenoisedSpecular();
+
+    auto normalMap = ctx.gbuffer->GetNormalRoughness();
+    auto worldPosMap = ctx.gbuffer->GetWorldPosMetallic();
     auto albedoMap = ctx.gbuffer->GetAlbedo();
 
-    // 初始狀態轉換
-    D3D12_RESOURCE_BARRIER preCompute[1] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(inputGI, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+    D3D12_RESOURCE_BARRIER preCompute[2] = {
+        CD3DX12_RESOURCE_BARRIER::Transition(inputDiffuse, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+        CD3DX12_RESOURCE_BARRIER::Transition(inputSpecular, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
     };
-    cmdList->ResourceBarrier(1, preCompute);
+    cmdList->ResourceBarrier(2, preCompute);
 
-    ID3D12Resource* srvRes = inputGI;
-    ID3D12Resource* uavRes = m_pingPongBuffers[0].Get();
+    ID3D12Resource* srvDiffuse = inputDiffuse;
+    ID3D12Resource* srvSpecular = inputSpecular;
+    ID3D12Resource* uavDiffuse = m_pingPongDiffuse[0].Get();
+    ID3D12Resource* uavSpecular = m_pingPongSpecular[0].Get();
 
     UINT srvUavSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
@@ -82,15 +88,17 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
     for (int i = 0; i < numPasses; ++i) {
         int stepSize = 1 << i; // 1, 2, 4, 8
 
-        // 綁定 UAV
+        // 綁定 2 個 UAV
         D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
         uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        device->CreateUnorderedAccessView(uavRes, nullptr, &uavDesc, cpuHandle);
-        auto uavGpuHandle = gpuHandle;
-        cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
 
-        // 綁定 4 個 SRV
+        device->CreateUnorderedAccessView(uavDiffuse, nullptr, &uavDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
+        device->CreateUnorderedAccessView(uavSpecular, nullptr, &uavDesc, cpuHandle);
+        auto uavGpuHandle = gpuHandle;
+        cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(2, srvUavSize);
+
+        // 綁定 5 個 SRV
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -98,20 +106,17 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
         auto srvGpuHandle = gpuHandle;
 
         srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        device->CreateShaderResourceView(srvRes, &srvDesc, cpuHandle);
-        cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
+        device->CreateShaderResourceView(srvDiffuse, &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
+        device->CreateShaderResourceView(srvSpecular, &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
 
         srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        device->CreateShaderResourceView(normalMap, &srvDesc, cpuHandle);
-        cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
+        device->CreateShaderResourceView(normalMap, &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
 
         srvDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-        device->CreateShaderResourceView(worldPosMap, &srvDesc, cpuHandle);
-        cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
+        device->CreateShaderResourceView(worldPosMap, &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
 
         srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        device->CreateShaderResourceView(albedoMap, &srvDesc, cpuHandle);
-        cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
+        device->CreateShaderResourceView(albedoMap, &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
 
         // 傳入 5 個常數 (寬、高、步距、當前 Pass 索引、是否為最後一個 Pass)
         uint32_t isLastPass = (i == numPasses - 1) ? 1 : 0;
@@ -123,34 +128,35 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
 
         cmdList->Dispatch((m_width + 7) / 8, (m_height + 7) / 8, 1);
 
-        // 管理 Ping-Pong 狀態轉換
+        // Ping-Pong 狀態切換與指標互換
         if (i < numPasses - 1) {
             int numBarriers = 0;
-            D3D12_RESOURCE_BARRIER bars[2];
-            // 剛寫完的 UAV 變成下一輪的 SRV
-            bars[numBarriers++] = CD3DX12_RESOURCE_BARRIER::Transition(uavRes, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            // 剛讀完的 SRV (若不是原始 input) 轉回 UAV 供下一輪寫入
-            if (srvRes != inputGI) {
-                bars[numBarriers++] = CD3DX12_RESOURCE_BARRIER::Transition(srvRes, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            D3D12_RESOURCE_BARRIER bars[4];
+            bars[numBarriers++] = CD3DX12_RESOURCE_BARRIER::Transition(uavDiffuse, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            bars[numBarriers++] = CD3DX12_RESOURCE_BARRIER::Transition(uavSpecular, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+            if (srvDiffuse != inputDiffuse) {
+                bars[numBarriers++] = CD3DX12_RESOURCE_BARRIER::Transition(srvDiffuse, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                bars[numBarriers++] = CD3DX12_RESOURCE_BARRIER::Transition(srvSpecular, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             }
             cmdList->ResourceBarrier(numBarriers, bars);
 
-            // 互換讀寫指標
-            auto temp = srvRes;
-            srvRes = uavRes;
-            uavRes = (temp == inputGI) ? m_pingPongBuffers[1].Get() : temp;
+            auto tempDiff = srvDiffuse; srvDiffuse = uavDiffuse; uavDiffuse = (tempDiff == inputDiffuse) ? m_pingPongDiffuse[1].Get() : tempDiff;
+            auto tempSpec = srvSpecular; srvSpecular = uavSpecular; uavSpecular = (tempSpec == inputSpecular) ? m_pingPongSpecular[1].Get() : tempSpec;
         }
     }
 
-    // 恢復狀態
-    D3D12_RESOURCE_BARRIER postCompute[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(inputGI, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
-        CD3DX12_RESOURCE_BARRIER::Transition(srvRes, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+    // 迴圈結束後，恢復輸入資源的狀態
+    D3D12_RESOURCE_BARRIER postCompute[4] = {
+        CD3DX12_RESOURCE_BARRIER::Transition(inputDiffuse, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+        CD3DX12_RESOURCE_BARRIER::Transition(inputSpecular, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+        CD3DX12_RESOURCE_BARRIER::Transition(srvDiffuse, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+        CD3DX12_RESOURCE_BARRIER::Transition(srvSpecular, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
     };
-    cmdList->ResourceBarrier(2, postCompute);
+    cmdList->ResourceBarrier(4, postCompute);
 
-    // 最後一次寫入的 uavRes 即為完成品
-    auto finalOutput = uavRes;
+    // uavDiffuse 包含了最終合成的畫面
+    auto finalOutput = uavDiffuse;
     auto backBuffer = ctx.gfx->GetCurrentBackBuffer();
 
     D3D12_RESOURCE_BARRIER copyBarriers[2] = {

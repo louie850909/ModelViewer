@@ -10,8 +10,8 @@ public:
 
     // 取得底層資源 (如果需要設定 Barrier)
     ID3D12Resource* GetAlbedo() const { return m_albedo.Get(); }
-    ID3D12Resource* GetNormal() const { return m_normal.Get(); }
-    ID3D12Resource* GetWorldPos() const { return m_worldPos.Get(); }
+    ID3D12Resource* GetNormalRoughness() const { return m_normalRouness.Get(); }
+    ID3D12Resource* GetWorldPosMetallic() const { return m_worldPosMetallic.Get(); }
     ID3D12Resource* GetVelocity() const { return m_velocity.Get(); }
 
     // 取得 Descriptor Heaps
@@ -34,9 +34,9 @@ private:
     void CreateResources(ID3D12Device* device, int width, int height);
     void CreateHeapsAndViews(ID3D12Device* device);
 
-    ComPtr<ID3D12Resource> m_albedo;    // RT0: RGB = Albedo, A = Roughness
-    ComPtr<ID3D12Resource> m_normal;    // RT1: RGB = Normal, A = Metallic
-    ComPtr<ID3D12Resource> m_worldPos;  // RT2: RGB = WorldPos, A = Custom
+    ComPtr<ID3D12Resource> m_albedo;    // RT0: RGBA = Albedo
+    ComPtr<ID3D12Resource> m_normalRouness;    // RT1: RGB = Normal, A = Roughness
+    ComPtr<ID3D12Resource> m_worldPosMetallic;  // RT2: RGB = WorldPos, A = Metallic
     ComPtr<ID3D12Resource> m_velocity;  // RT3: RG = Velocity (螢幕空間向量)
 
     ComPtr<ID3D12DescriptorHeap> m_rtvHeap;

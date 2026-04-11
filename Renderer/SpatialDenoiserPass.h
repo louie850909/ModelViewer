@@ -15,8 +15,9 @@ private:
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_pso;
 
-    // 多 Pass 需要使用的 Ping-Pong 緩衝區
-    ComPtr<ID3D12Resource> m_pingPongBuffers[2];
+    // 擴充為雙軌 Ping-Pong 緩衝區
+    ComPtr<ID3D12Resource> m_pingPongDiffuse[2];
+    ComPtr<ID3D12Resource> m_pingPongSpecular[2];
 
     ComPtr<ID3D12DescriptorHeap> m_descriptorHeap;
 
