@@ -15,7 +15,7 @@ void TemporalDenoiserPass::Init(ID3D12Device* device) {
     srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 9, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
     CD3DX12_ROOT_PARAMETER1 rootParams[3];
-    rootParams[0].InitAsConstants(2, 0); // b0: width, height
+    rootParams[0].InitAsConstants(22, 0); // 2(寬高) + 3(相機位置) + 1(對齊) + 16(矩陣) = 22
     rootParams[1].InitAsDescriptorTable(1, &uavRange);
     rootParams[2].InitAsDescriptorTable(1, &srvRange);
 
@@ -132,8 +132,17 @@ void TemporalDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPas
     ID3D12DescriptorHeap* heaps[] = { m_descriptorHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
 
-    uint32_t constants[2] = { (uint32_t)m_width, (uint32_t)m_height };
-    cmdList->SetComputeRoot32BitConstants(0, 2, constants, 0);
+    TemporalConstants cb = {};
+    cb.width = m_width;
+    cb.height = m_height;
+    cb.cameraPos = ctx.scene->GetCameraPos(); // 取得相機位置
+
+    // 取得上一幀的矩陣 (請依您的 Context 變數名稱微調，若為 prevView/prevProj)
+    DirectX::XMMATRIX prevVP = ctx.prevView * ctx.prevUnjitteredProj;
+    DirectX::XMStoreFloat4x4(&cb.prevViewProj, DirectX::XMMatrixTranspose(prevVP));
+
+    // 傳送 22 個 DWORD
+    cmdList->SetComputeRoot32BitConstants(0, 22, &cb, 0);
 
     CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
     cmdList->SetComputeRootDescriptorTable(1, gpuHandle); // UAV table

@@ -11,6 +11,15 @@ public:
     ID3D12Resource* GetDenoisedSpecular() const { return m_historySpecular[m_writeIdx].Get(); }
 
 private:
+    struct TemporalConstants
+    {
+        uint32_t width;
+        uint32_t height;
+        DirectX::XMFLOAT3 cameraPos;
+        float _pad;
+        DirectX::XMFLOAT4X4 prevViewProj;
+    };
+
     void EnsureResources(ID3D12Device* device, int width, int height);
 
     ComPtr<ID3D12RootSignature> m_rootSig;
