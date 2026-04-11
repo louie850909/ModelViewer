@@ -1,7 +1,8 @@
 #include "PBRCommon.hlsli"
 
 RaytracingAccelerationStructure Scene : register(t0, space0);
-RWTexture2D<float4> RenderTarget : register(u0, space0);
+RWTexture2D<float4> DiffuseTarget : register(u0, space0);
+RWTexture2D<float4> SpecularTarget : register(u1, space0);
 
 cbuffer CameraParams : register(b0, space0)
 {
@@ -90,10 +91,12 @@ float3 getCosineWeightedSample(float3 n, inout uint seed)
 // ==========================================
 struct Payload
 {
-    float3 radiance; // 累計發光量
+    float3 diffuse; // 收集到的漫反射能量
+    float3 specular; // 收集到的高光能量
     float3 throughput; // 光線衰減權重
     uint depth; // 目前彈跳次數
     uint seed; // 亂數種子
+    bool isSpecularBounce; // 標記這條光線在第一次彈跳時是否走了高光路徑
 };
 
 struct ShadowPayload
@@ -110,12 +113,23 @@ void ShadowMiss(inout ShadowPayload payload)
     payload.isHit = false;
 }
 
+// --- Miss Shader ---
 [shader("miss")]
 void Miss(inout Payload payload)
 {
-    // 打到天空：將天空顏色乘上衰減權重加進結果
     float3 skyColor = float3(0.2f, 0.4f, 0.8f);
-    payload.radiance += payload.throughput * skyColor;
+    // 根據路徑屬性，將天空顏色存入對應的能量槽
+    if (payload.depth == 0)
+    {
+        payload.diffuse += payload.throughput * skyColor;
+    }
+    else
+    {
+        if (payload.isSpecularBounce)
+            payload.specular += payload.throughput * skyColor;
+        else
+            payload.diffuse += payload.throughput * skyColor;
+    }
 }
 
 [shader("raygeneration")]
@@ -132,19 +146,19 @@ void RayGen()
     
     // 為了減少靜態雜訊，對每個像素發射多條光線並取平均
     const uint SPP = 2;
-    float3 accumulatedRadiance = float3(0, 0, 0);
+    float3 accumDiffuse = float3(0, 0, 0);
+    float3 accumSpecular = float3(0, 0, 0);
 
     [unroll]
     for (uint s = 0; s < SPP; ++s)
     {
         Payload payload;
-        payload.radiance = float3(0, 0, 0);
+        payload.diffuse = float3(0, 0, 0);
+        payload.specular = float3(0, 0, 0);
         payload.throughput = float3(1, 1, 1);
         payload.depth = 0;
-        // 每個 sample 用不同的 seed，確保方向各異
-        payload.seed = pcg_hash(launchIndex.y * launchDim.x + launchIndex.x
-                                + frameCount * 719393u
-                                + s * 1234567u); // ← sample offset
+        payload.isSpecularBounce = false;
+        payload.seed = pcg_hash(launchIndex.y * launchDim.x + launchIndex.x + frameCount * 719393u + s * 1234567u);
 
         RayDesc ray;
         ray.Origin = cameraPos;
@@ -153,11 +167,14 @@ void RayGen()
         ray.TMax = 10000.0f;
 
         TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
-        accumulatedRadiance += payload.radiance;
+        
+        accumDiffuse += payload.diffuse;
+        accumSpecular += payload.specular;
     }
 
-    // 取平均
-    RenderTarget[launchIndex] = float4(accumulatedRadiance / (float) SPP, 1.0f);
+    // 分別輸出到兩張貼圖
+    DiffuseTarget[launchIndex] = float4(accumDiffuse / (float) SPP, 1.0f);
+    SpecularTarget[launchIndex] = float4(accumSpecular / (float) SPP, 1.0f);
 }
 
 [shader("closesthit")]
@@ -268,14 +285,32 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
                 // 漫反射項 (Diffuse)
                 float3 kD = (1.0f - F) * (1.0f - metallic);
-                float3 diffuse = kD * baseColor / PI;
+                float3 diff = kD * baseColor / PI;
 
-                directLighting += (diffuse + specular) * L.color * L.intensity * ndotl * attenuation;
+                float3 currentDirectDiffuse = diff * L.color * L.intensity * ndotl * attenuation;
+                float3 currentDirectSpecular = specular * L.color * L.intensity * ndotl * attenuation;
+
+                // 精確拆分直接光照
+                if (payload.depth == 0)
+                {
+                    payload.diffuse += payload.throughput * currentDirectDiffuse;
+                    payload.specular += payload.throughput * currentDirectSpecular;
+                }
+                else
+                {
+                    // 如果是後續彈跳，根據第一次彈跳的屬性來歸類能量
+                    if (payload.isSpecularBounce)
+                    {
+                        payload.specular += payload.throughput * (currentDirectDiffuse + currentDirectSpecular);
+                    }
+                    else
+                    {
+                        payload.diffuse += payload.throughput * (currentDirectDiffuse + currentDirectSpecular);
+                    }
+                }
             }
         }
     }
-
-    payload.radiance += payload.throughput * directLighting;
 
     // ==========================================
     // 3. 計算間接光照與材質反射 (Indirect Bounce)
@@ -286,15 +321,17 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
         // 計算菲涅爾效應，並以此做為發生「鏡面反射」的機率
         float3 F = FresnelSchlick(max(dot(worldNormal, V), 0.0f), F0);
-        float specProbability = lerp(max(F.r, max(F.g, F.b)), 1.0f, metallic);
-        specProbability = clamp(specProbability, 0.05f, 0.95f); // 確保機率不為絕對的 0 或 1
+        float specProbability = clamp(lerp(max(F.r, max(F.g, F.b)), 1.0f, metallic), 0.05f, 0.95f);
 
         float randomVal = rand(payload.seed);
         float3 bounceDir;
 
         if (randomVal < specProbability)
         {
-            // 【走鏡面反射路徑】(例如金屬、光滑表面)
+            // 走鏡面反射路徑
+            if (payload.depth == 1)
+                payload.isSpecularBounce = true; // 紀錄為高光路徑
+
             float3 reflectDir = reflect(-V, worldNormal);
             
             // 根據粗糙度 (Roughness) 加入反射方向的隨機抖動，實現模糊反射
@@ -306,9 +343,11 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         }
         else
         {
-            // 【走漫反射路徑】(例如粗糙表面、非金屬)
+            // 走漫反射路徑
+            if (payload.depth == 1)
+                payload.isSpecularBounce = false; // 紀錄為漫反射路徑
+
             bounceDir = getCosineWeightedSample(worldNormal, payload.seed);
-            
             float3 kD = (1.0f - F) * (1.0f - metallic);
             payload.throughput *= (kD * baseColor) / (1.0f - specProbability);
         }

@@ -3,7 +3,7 @@
 
 void RayTracingPass::CreateRootSignature(ID3D12Device5* device) {
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
-    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
+    uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
     // 無限制大小的 SRV 陣列 (t0, space2)
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
@@ -64,9 +64,9 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 
     // 3. Shader Config (Payload 大小)
     D3D12_RAYTRACING_SHADER_CONFIG shaderConfig = {};
-    // 將 Payload 擴大到 32 Bytes (radiance 12 + throughput 12 + depth 4 + seed 4)
-    shaderConfig.MaxPayloadSizeInBytes = 32;
-    shaderConfig.MaxAttributeSizeInBytes = 8; // float2 barycentrics
+    // (diffuse 12 + specular 12 + throughput 12 + depth 4 + seed 4 + bool 4)
+    shaderConfig.MaxPayloadSizeInBytes = 48;
+    shaderConfig.MaxAttributeSizeInBytes = 8;
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG, &shaderConfig };
 
     // 4. Global Root Signature
@@ -228,7 +228,7 @@ void RayTracingPass::Init(ID3D12Device* device) {
 }
 
 void RayTracingPass::EnsureOutputTexture(ID3D12Device* device, int width, int height) {
-    if (m_outputWidth == width && m_outputHeight == height && m_raytracingOutput != nullptr) return;
+if (m_outputWidth == width && m_outputHeight == height && m_diffuseOutput != nullptr) return;
 
     m_outputWidth = width;
     m_outputHeight = height;
@@ -237,12 +237,22 @@ void RayTracingPass::EnsureOutputTexture(ID3D12Device* device, int width, int he
     auto uavDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, width, height, 1, 1);
     uavDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
-    device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &uavDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_raytracingOutput));
+    m_diffuseOutput.Reset();
+    m_specularOutput.Reset();
 
-    // 每次重建輸出貼圖時，一併更新 Descriptor Heap 中的 UAV
+    device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &uavDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_diffuseOutput));
+    device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &uavDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_specularOutput));
+
+    // 更新 Descriptor Heap 中的 2 個 UAV
+    UINT srvUavSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
     D3D12_UNORDERED_ACCESS_VIEW_DESC viewDesc = {};
     viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-    device->CreateUnorderedAccessView(m_raytracingOutput.Get(), nullptr, &viewDesc, m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
+    
+    device->CreateUnorderedAccessView(m_diffuseOutput.Get(), nullptr, &viewDesc, cpuHandle);
+    cpuHandle.Offset(1, srvUavSize);
+    device->CreateUnorderedAccessView(m_specularOutput.Get(), nullptr, &viewDesc, cpuHandle);
 }
 
 void RayTracingPass::BuildTLAS(ID3D12GraphicsCommandList4* cmdList4, RenderPassContext& ctx) {
@@ -393,5 +403,5 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     // 發射！
     cmdList4->DispatchRays(&rayDesc);
     // // 將原始輸出交給 Context，讓下一個 Pass (Denoiser) 接手
-    ctx.rawRaytracingOutput = m_raytracingOutput.Get();
+    ctx.rawRaytracingOutput = m_diffuseOutput.Get();
 }
