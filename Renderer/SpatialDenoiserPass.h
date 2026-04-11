@@ -14,7 +14,10 @@ private:
 
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_pso;
-    ComPtr<ID3D12Resource> m_outputBuffer;
+
+    // 多 Pass 需要使用的 Ping-Pong 緩衝區
+    ComPtr<ID3D12Resource> m_pingPongBuffers[2];
+
     ComPtr<ID3D12DescriptorHeap> m_descriptorHeap;
 
     TemporalDenoiserPass* m_temporalPass = nullptr;
