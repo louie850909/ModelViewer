@@ -32,7 +32,8 @@ struct RenderPassContext {
     // // 目前累計的影格數
     UINT frameCount = 0;
     // --- 帶有雜訊的 Raw GI ---
-    ID3D12Resource* rawRaytracingOutput = nullptr;
+    ID3D12Resource* rawDiffuseGI = nullptr;
+    ID3D12Resource* rawSpecularGI = nullptr;
     // 存放全域相機 Constant Buffer 的 GPU 虛擬位址
     D3D12_GPU_VIRTUAL_ADDRESS passCameraCBAddress = 0;
 };

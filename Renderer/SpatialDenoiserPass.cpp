@@ -54,7 +54,7 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
     auto device = ctx.gfx->GetDevice();
     EnsureResources(device, ctx.gfx->GetWidth(), ctx.gfx->GetHeight());
 
-    auto inputGI = m_temporalPass->GetDenoisedOutput();
+    auto inputGI = m_temporalPass->GetDenoisedDiffuse();
     auto normalMap = ctx.gbuffer->GetNormal();
     auto worldPosMap = ctx.gbuffer->GetWorldPos();
     auto albedoMap = ctx.gbuffer->GetAlbedo();

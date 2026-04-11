@@ -403,5 +403,6 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     // 發射！
     cmdList4->DispatchRays(&rayDesc);
     // // 將原始輸出交給 Context，讓下一個 Pass (Denoiser) 接手
-    ctx.rawRaytracingOutput = m_diffuseOutput.Get();
+    ctx.rawDiffuseGI = m_diffuseOutput.Get();
+    ctx.rawSpecularGI = m_specularOutput.Get();
 }

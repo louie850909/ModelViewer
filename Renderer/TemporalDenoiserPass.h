@@ -7,7 +7,8 @@ public:
     void Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext& ctx) override;
 
     // 將回傳的結果指向 m_historyGI
-    ID3D12Resource* GetDenoisedOutput() const { return m_historyGI[m_writeIdx].Get(); }
+    ID3D12Resource* GetDenoisedDiffuse() const { return m_historyDiffuse[m_writeIdx].Get(); }
+    ID3D12Resource* GetDenoisedSpecular() const { return m_historySpecular[m_writeIdx].Get(); }
 
 private:
     void EnsureResources(ID3D12Device* device, int width, int height);
@@ -16,7 +17,8 @@ private:
     ComPtr<ID3D12PipelineState> m_pso;
 
     // SVGF 需要儲存的三種歷史資訊 (Ping-Pong 互換讀寫)
-    ComPtr<ID3D12Resource> m_historyGI[2];
+    ComPtr<ID3D12Resource> m_historyDiffuse[2];
+    ComPtr<ID3D12Resource> m_historySpecular[2];
     ComPtr<ID3D12Resource> m_historyNormal[2];
     ComPtr<ID3D12Resource> m_historyPos[2];
 
