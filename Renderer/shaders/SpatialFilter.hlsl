@@ -108,8 +108,8 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
         // Gamma Correction
         combined = pow(combined, float3(1.0f / 2.2f, 1.0f / 2.2f, 1.0f / 2.2f));
         
-        //OutputDiffuse[DTid.xy] = float4(combined, 1.0f);
-        OutputDiffuse[DTid.xy] = float4(finalSpecular.rgb * 5.0f, 1.0f); // debug 用：直接輸出模糊後的高光，觀察效果
+        OutputDiffuse[DTid.xy] = float4(combined, 1.0f);
+        //OutputDiffuse[DTid.xy] = float4(finalSpecular.rgb * 5.0f, 1.0f); // debug 用：直接輸出模糊後的高光，觀察效果
         OutputSpecular[DTid.xy] = finalSpecular; // 僅佔位用
     }
     else

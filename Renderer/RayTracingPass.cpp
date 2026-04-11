@@ -130,10 +130,10 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
     // HitGroup 起始偏移量往後推
     uint8_t* hitGroupData = pData + 192;
 
-    // 準備將各模型的 SRV 複製到 Global Heap 中 (索引 0 保留給 UAV)
-    UINT destHeapIndex = 1;
+    // 準備將各模型的 SRV 複製到 Global Heap 中 (索引 0 和 1 保留給 Diffuse 與 Specular UAV)
+    UINT destHeapIndex = 2;
     UINT srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE destHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 1, srvDescSize);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE destHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 2, srvDescSize);
 
     for (auto& inst : ctx.scene->GetMeshes()) {
         auto& mesh = inst.mesh;
@@ -145,7 +145,7 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
         if (numMats == 0) numMats = 1; // 至少會有一個預設材質
 
         for (UINT m = 0; m < numMats; ++m) {
-            matToGlobalIdx.push_back(destHeapIndex - 1); // 記錄相對於 Unbounded Array (從1開始) 的內部索引
+            matToGlobalIdx.push_back(destHeapIndex - 2); // 記錄相對於 Unbounded Array (從2開始) 的內部索引
 
             // 每個材質包含 BaseColor 與 MetallicRoughness (2 張貼圖)
             for (int t = 0; t < 2; ++t) {
@@ -377,9 +377,9 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     cmdList4->SetComputeRootConstantBufferView(2, m_cameraCB->GetGPUVirtualAddress());                // Camera
 	cmdList4->SetComputeRootConstantBufferView(3, ctx.lightCB->GetGPUVirtualAddress());  		        // Light
 
-    // 綁定全域的貼圖陣列 (指向 Heap 的 index 1)
+    // 綁定全域的貼圖陣列 (指向 Heap 的 index 2)
     UINT srvDescSize = ctx.gfx->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    CD3DX12_GPU_DESCRIPTOR_HANDLE srvTable(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, srvDescSize);
+    CD3DX12_GPU_DESCRIPTOR_HANDLE srvTable(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), 2, srvDescSize);
     cmdList4->SetComputeRootDescriptorTable(4, srvTable);
 
     // 設定 SBT 區塊位置與大小
