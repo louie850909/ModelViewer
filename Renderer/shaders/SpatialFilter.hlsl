@@ -15,6 +15,7 @@ Texture2D<float4> InputSpecular : register(t1);
 Texture2D<float4> NormalMap : register(t2);
 Texture2D<float4> WorldPosMap : register(t3);
 Texture2D<float4> AlbedoMap : register(t4);
+Texture2D<float2> VarianceMap : register(t5);
 
 [numthreads(8, 8, 1)]
 void CSMain(uint3 DTid : SV_DispatchThreadID)
@@ -41,6 +42,10 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float sumWeightDiffuse = 0.0f;
     float4 sumSpecular = 0.0f;
     float sumWeightSpecular = 0.0f;
+    
+    float2 centerVar = VarianceMap[DTid.xy].xy;
+    float varScaleDiff = 1.0f + centerVar.x * 20.0f; // Variance 越高，Scale 越大
+    float varScaleSpec = 1.0f + centerVar.y * 30.0f;
 
     const int radius = 2;
 
@@ -74,15 +79,14 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             // Luma 差距大 → 跨越紋理邊界 → 大幅降低 Diffuse 模糊權重
             float sampleLuma = dot(max(AlbedoMap[samplePos].rgb, 0.001f),
                                    float3(0.2126f, 0.7152f, 0.0722f));
-            float lumaWeight = exp(-abs(centerLuma - sampleLuma) * 20.0f);
-
-            // Diffuse 加入 lumaWeight
+            
+            // 將 varScaleDiff / varScaleSpec 作為分母。
+            // Variance 高時 -> 指數部分趨近 0 -> exp(0) = 1 (模糊放寬)
+            float lumaWeight = exp(-abs(centerLuma - sampleLuma) * 30.0f / varScaleDiff);
             float diffW = spatialWeight * normalWeight * posWeight * lumaWeight;
 
-            // ★ 修改：roughnessWeight 分母下限從 0.05 提高至 0.10
-            // 防止低粗糙度（光滑）材質的 Specular 被過度模糊
-            float roughnessWeight = exp(-(x * x + y * y) /
-                                        max(centerRoughness * centerRoughness * 10.0f, 0.10f));
+            // Specular 的權重獨立使用 Spec Variance 引導
+            float roughnessWeight = exp(-(x * x + y * y) / max(centerRoughness * centerRoughness * 10.0f * varScaleSpec, 0.10f));
             float specW = diffW * roughnessWeight;
 
             sumDiffuse += sampleDiff * diffW;

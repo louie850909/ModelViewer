@@ -9,6 +9,8 @@ public:
     // 將回傳的結果指向 m_historyGI
     ID3D12Resource* GetDenoisedDiffuse() const { return m_historyDiffuse[m_writeIdx].Get(); }
     ID3D12Resource* GetDenoisedSpecular() const { return m_historySpecular[m_writeIdx].Get(); }
+	// Variance Output (供 Spatial Pass 讀取)
+    ID3D12Resource* GetVarianceOutput() const { return m_varianceOutput.Get(); }
 
 private:
     struct TemporalConstants
@@ -30,7 +32,7 @@ private:
     ComPtr<ID3D12Resource> m_historySpecular[2];
     ComPtr<ID3D12Resource> m_historyNormal[2];
     ComPtr<ID3D12Resource> m_historyPos[2];
-
+    ComPtr<ID3D12Resource> m_varianceOutput;
     ComPtr<ID3D12DescriptorHeap> m_descriptorHeap;
 
     int m_width = 0;

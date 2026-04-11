@@ -3,8 +3,7 @@
 
 void SpatialDenoiserPass::Init(ID3D12Device* device) {
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-    // 4 passes * (2 UAVs + 5 SRVs) = 28。開 32 確保充足。
-    heapDesc.NumDescriptors = 32;
+    heapDesc.NumDescriptors = 40; // 擴大以策安全
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_descriptorHeap));
@@ -12,7 +11,7 @@ void SpatialDenoiserPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
     uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE); // ★ 6 個 SRV
 
     CD3DX12_ROOT_PARAMETER1 rootParams[3];
     rootParams[0].InitAsConstants(5, 0);
@@ -116,7 +115,7 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
         auto uavGpuHandle = gpuHandle;
         cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(2, srvUavSize);
 
-        // 綁定 5 個 SRV
+        // 綁定 6 個 SRV
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -135,6 +134,9 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
 
         srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         device->CreateShaderResourceView(albedoMap, &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
+
+        srvDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
+        device->CreateShaderResourceView(m_temporalPass->GetVarianceOutput(), &srvDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize); gpuHandle.Offset(1, srvUavSize);
 
         // 傳入 5 個常數 (寬、高、步距、當前 Pass 索引、是否為最後一個 Pass)
         uint32_t constants[5] = { (uint32_t)m_width, (uint32_t)m_height, (uint32_t)stepSize, (uint32_t)i, isLastPass ? 1 : 0 };

@@ -53,6 +53,14 @@ SamplerState texSampler : register(s0, space0);
 // ==========================================
 // 亂數與取樣工具
 // ==========================================
+
+// 產生在 3x3 空間內分佈非常均勻的低差異雜訊，特別適合 SVGF 降噪
+float IGN(float2 pixelPos)
+{
+    float3 magic = float3(0.06711056f, 0.00583715f, 52.9829189f);
+    return frac(magic.z * frac(dot(pixelPos, magic.xy)));
+}
+
 uint pcg_hash(uint seed)
 {
     uint state = seed * 747796405u + 2891336453u;
@@ -143,11 +151,15 @@ void RayGen()
 
     float4 target = mul(float4(d.x, d.y, 1.0f, 1.0f), viewProjInv);
     float3 rayDir = normalize((target.xyz / target.w) - cameraPos);
-    
-    // 為了減少靜態雜訊，對每個像素發射多條光線並取平均
+
     const uint SPP = 2;
     float3 accumDiffuse = float3(0, 0, 0);
     float3 accumSpecular = float3(0, 0, 0);
+
+    // 使用 IGN 結合時間與空間，產生低差異性的亂數基底
+    // 每幀加上一個基於黃金比例的偏移量，打亂時間軸的規律，避免雜訊固定在畫面上
+    float frameOffset = (float) (frameCount % 256) * 1.61803398f;
+    float spatialTemporalNoise = IGN(float2(launchIndex.x, launchIndex.y) + frameOffset);
 
     [unroll]
     for (uint s = 0; s < SPP; ++s)
@@ -158,7 +170,10 @@ void RayGen()
         payload.throughput = float3(1, 1, 1);
         payload.depth = 0;
         payload.isSpecularBounce = false;
-        payload.seed = pcg_hash(launchIndex.y * launchDim.x + launchIndex.x + frameCount * 719393u + s * 1234567u);
+        
+        // 將 IGN 的浮點數轉為 uint，再丟給 pcg_hash 徹底攪拌
+        // 這樣既保留了 IGN 的空間均勻性，又具備 pcg_hash 的去關聯性
+        payload.seed = pcg_hash(asuint(spatialTemporalNoise) ^ (s * 114514u));
 
         RayDesc ray;
         ray.Origin = cameraPos;
@@ -167,7 +182,7 @@ void RayGen()
         ray.TMax = 10000.0f;
 
         TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
-        
+
         accumDiffuse += payload.diffuse;
         accumSpecular += payload.specular;
     }
@@ -176,7 +191,6 @@ void RayGen()
     DiffuseTarget[launchIndex] = float4(accumDiffuse / (float) SPP, 1.0f);
     SpecularTarget[launchIndex] = float4(accumSpecular / (float) SPP, 1.0f);
 }
-
 [shader("closesthit")]
 void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
@@ -329,18 +343,36 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
         if (randomVal < specProbability)
         {
-            // 走鏡面反射路徑
+            // 走鏡面反射路徑 (GGX VNDF 重要性採樣)
             if (isFirstBounce)
-                payload.isSpecularBounce = true; // 紀錄為高光路徑
+                payload.isSpecularBounce = true;
 
-            float3 reflectDir = reflect(-V, worldNormal);
+            float alpha = max(roughness * roughness, 0.001f);
+            float2 u = float2(rand(payload.seed), rand(payload.seed));
+
+            // 1. 建立切線空間矩陣
+            float3x3 tbn = GetTBN(worldNormal);
             
-            // 根據粗糙度 (Roughness) 加入反射方向的隨機抖動，實現模糊反射
-            float3 randomHemisphereDir = getCosineWeightedSample(reflectDir, payload.seed);
-            bounceDir = normalize(lerp(reflectDir, randomHemisphereDir, roughness * roughness));
+            // 2. 將視角方向轉換到切線空間 (World -> Local)
+            float3 V_local = normalize(mul(tbn, V));
+            
+            // 3. 使用 VNDF 採樣微表面法線 (Half-vector)
+            float3 H_local = SampleGGXVNDF(V_local, alpha, alpha, u.x, u.y);
+            
+            // 4. 將微表面法線轉回世界空間 (Local -> World)
+            float3 H = normalize(mul(H_local, tbn));
+            
+            // 5. 計算反射方向
+            bounceDir = reflect(-V, H);
 
-            // 將能量除以機率，確保能量守恆
-            payload.throughput *= F / specProbability;
+            // 6. 計算 shadowing-masking 權重 (G2 / G1) 以確保能量守恆
+            // 因為 VNDF 採樣的機率密度函數 (PDF) 剛好與 BRDF 中的 D 和 G1 抵銷，
+            // 所以我們只需乘上 Fresnel 與幾何遮蔽比率 (G2/G1) 即可。
+            float G1 = GeometrySchlickGGX(max(dot(worldNormal, V), 0.0f), roughness);
+            float G2 = GeometrySmith(worldNormal, V, bounceDir, roughness);
+            float G_weight = (G1 > 0.0001f) ? (G2 / G1) : 0.0f;
+
+            payload.throughput *= (F * G_weight) / specProbability;
         }
         else
         {
