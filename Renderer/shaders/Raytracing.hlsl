@@ -193,11 +193,8 @@ void RayGen()
     float3 accumDiffuse = float3(0, 0, 0);
     float3 accumSpecular = float3(0, 0, 0);
 
-    // 使用 IGN 結合時間與空間，產生低差異性的亂數基底
-    // 每幀加上一個基於黃金比例的偏移量，打亂時間軸的規律，避免雜訊固定在畫面上
-    float frameOffset = (float) (frameCount % 256) * 1.61803398f;
-    float spatialTemporalNoise = IGN(float2(launchIndex.x, launchIndex.y) + frameOffset);
-
+    uint linearIndex = launchIndex.y * launchDim.x + launchIndex.x;
+    
     [unroll]
     for (uint s = 0; s < SPP; ++s)
     {
@@ -208,9 +205,7 @@ void RayGen()
         payload.depth = 0;
         payload.isSpecularBounce = false;
         
-        // 將 IGN 的浮點數轉為 uint，再丟給 pcg_hash 徹底攪拌
-        // 這樣既保留了 IGN 的空間均勻性，又具備 pcg_hash 的去關聯性
-        payload.seed = pcg_hash(asuint(spatialTemporalNoise) ^ (s * 114514u));
+        payload.seed = pcg_hash(linearIndex ^ (frameCount * 114514u) ^ (s * 1973u));
 
         RayDesc ray;
         ray.Origin = cameraPos;
@@ -219,6 +214,18 @@ void RayGen()
         ray.TMax = 10000.0f;
 
         TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
+
+        // 螢火蟲抑制 (Firefly Clamping)
+        // 限制單次光線反彈帶回來的最大能量，避免 HDRI 極亮點摧毀時域累積的歷史
+        const float MAX_RADIANCE = 20.0f; // 可視您的 HDRI 亮度上下微調此數值
+
+        float lumaD = dot(payload.diffuse, float3(0.2126f, 0.7152f, 0.0722f));
+        if (lumaD > MAX_RADIANCE) 
+            payload.diffuse *= (MAX_RADIANCE / lumaD);
+
+        float lumaS = dot(payload.specular, float3(0.2126f, 0.7152f, 0.0722f));
+        if (lumaS > MAX_RADIANCE) 
+            payload.specular *= (MAX_RADIANCE / lumaS);
 
         accumDiffuse += payload.diffuse;
         accumSpecular += payload.specular;
