@@ -359,6 +359,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     
     float3x4 mInv = WorldToObject3x4();
     float3 worldNormal = normalize(mul(localNormal, (float3x3) mInv));
+    float3 geoNormal = worldNormal;
     float3 worldPos = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     
     // 攝影機視角方向
@@ -371,12 +372,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     float roughness = 0.5f;
     float metallic = 0.0f;
 
-    // 先把 baseColorFactor 轉到線性空間
-    float3 baseColorFactorLinear = float3(
-        pow(baseColorFactor_r, 2.2f),
-        pow(baseColorFactor_g, 2.2f),
-        pow(baseColorFactor_b, 2.2f)
-    );
+    float3 baseColorFactorLinear = float3(baseColorFactor_r, baseColorFactor_g, baseColorFactor_b);
 
     if (textureIndex != 0xFFFFFFFF)
     {
@@ -530,11 +526,13 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         float2 uEnv = float2(rand(payload.seed), rand(payload.seed));
         EnvSampleResult envSample = SampleEnv(uEnv, envIntegral);
 
-        float ndotl_env = dot(worldNormal, envSample.direction);
+        float3 neeNormal = (dot(V, worldNormal) >= 0.0f) ? worldNormal : -worldNormal;
+        float ndotl_env = dot(neeNormal, envSample.direction);
         if (ndotl_env > 0.0f)
         {
             RayDesc shadowRayEnv;
-            shadowRayEnv.Origin = worldPos + worldNormal * 0.001f;
+            float3 neeOriginOffset = (dot(V, worldNormal) >= 0.0f) ? worldNormal : -worldNormal;
+            shadowRayEnv.Origin = worldPos + neeOriginOffset * 0.001f;
             shadowRayEnv.Direction = envSample.direction;
             shadowRayEnv.TMin = 0.01f;
             shadowRayEnv.TMax = 10000.0f;
@@ -559,9 +557,9 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
                 // --- MIS 評估：計算 BRDF PDF ---
                 float G1 = GeometrySchlickGGX(max(dot(worldNormal, V), 0.0f), roughness);
-                float pdf_specular = (NDF * G1) / (4.0f * max(dot(worldNormal, V), 0.0f) + 0.0001f);
-                float pdf_diffuse = ndotl_env / PI;
-                float pdf_brdf = lerp(pdf_diffuse, pdf_specular, specProbability);
+                float pdf_spec = (NDF * G1) / (4.0f * max(dot(worldNormal, V), 0.0f) + 0.0001f);
+                float pdf_diff = ndotl_env / PI;
+                float pdf_brdf = lerp(pdf_diff, pdf_spec, specProbability);
 
                 // Power Heuristic 公式: ENV² / (ENV² + BRDF²)
                 float misWeight = (envSample.pdf * envSample.pdf) / (envSample.pdf * envSample.pdf + pdf_brdf * pdf_brdf);
@@ -599,7 +597,8 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         {
             // Schlick Fresnel 近似：掠射角反射率高，正入射幾乎全折射
             float cosTheta = abs(dot(-WorldRayDirection(), worldNormal));
-            float F_schlick = 0.04f + (1.0f - 0.04f) * pow(1.0f - cosTheta, 5.0f);
+            float f0_scalar = F0.r;
+            float F_schlick = f0_scalar + (1.0f - f0_scalar) * pow(1.0f - cosTheta, 5.0f);
             float fresnelReflect = F_schlick; // 只考慮表面反射率，不乘 transmissionFactor
 
             if (randomVal < fresnelReflect)
@@ -619,10 +618,19 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                 float G1 = GeometrySchlickGGX(max(dot(worldNormal, V), 0.0f), roughness);
                 float G2 = GeometrySmith(worldNormal, V, rDir, roughness);
                 float G_weight = (G1 > 0.0001f) ? (G2 / G1) : 0.0f;
-                payload.throughput *= (F_bounce * G_weight) / max(fresnelReflect, 0.001f);
+                payload.throughput *= G_weight / max(fresnelReflect, 0.001f);
 
                 if (dot(rDir, worldNormal) > 0.0f)
                 {
+                    float maxThroughput = max(payload.throughput.r, max(payload.throughput.g, payload.throughput.b));
+                    if (maxThroughput < 0.1f)
+                    {
+                        float survivalProb = max(maxThroughput, 0.05f);
+                        if (rand(payload.seed) > survivalProb)
+                            return; // 提早終止
+                        payload.throughput /= survivalProb; // 能量補償
+                    }
+                    
                     RayDesc bounceRay;
                     bounceRay.Origin = worldPos + worldNormal * 0.001f;
                     bounceRay.Direction = rDir;
@@ -638,18 +646,34 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                     payload.isSpecularBounce = false;
 
                 float3 incomingDir = WorldRayDirection();
-                float cosI = dot(-incomingDir, worldNormal);
+                float cosI = dot(-incomingDir, geoNormal);
                 bool entering = (cosI > 0.0f);
                 float eta = entering ? (1.0f / ior) : ior;
-                float3 refractNormal = entering ? worldNormal : -worldNormal;
+                float3 refractNormal = entering ? geoNormal : -geoNormal;
 
                 float3 refractDir = refract(incomingDir, refractNormal, eta);
                 if (dot(refractDir, refractDir) < 0.001f)
                     refractDir = reflect(incomingDir, refractNormal);
 
                 float refractProb = 1.0f - fresnelReflect;
-                // baseColor tint：模擬介質吸收（Beer-Lambert 近似）
-                payload.throughput *= (baseColor * transmissionFactor) / max(refractProb, 0.001f);
+                float pathLength = RayTCurrent(); // 光線在介質中走的距離
+
+                // 將 baseColor 轉為吸收係數：顏色越深吸收越快
+                // 加 epsilon 防止 log(0) — baseColor 若為純白不吸收，純黑吸收極強
+                float3 absorptionCoeff = -log(max(baseColor, 0.001f));
+
+                // Beer-Lambert 衰減，乘以 transmissionFactor 控制整體穿透率
+                float3 beerLambert = exp(-absorptionCoeff * pathLength) * transmissionFactor;
+                payload.throughput *= beerLambert / max(refractProb, 0.001f);
+                
+                float maxThroughput = max(payload.throughput.r, max(payload.throughput.g, payload.throughput.b));
+                if (maxThroughput < 0.1f)
+                {
+                    float survivalProb = max(maxThroughput, 0.05f);
+                    if (rand(payload.seed) > survivalProb)
+                        return; // 提早終止
+                    payload.throughput /= survivalProb; // 能量補償
+                }
 
                 RayDesc transRay;
                 transRay.Origin = worldPos - refractNormal * 0.002f;
