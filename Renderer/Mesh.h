@@ -42,6 +42,7 @@ struct Mesh {
     // 記錄解析出來的貼圖絕對路徑 (索引對應 materialIndex)
     std::vector<std::string> texturePaths;
     std::vector<std::string> metallicRoughnessPaths;
+    std::vector<std::string> normalPaths;
 
     // 用來儲存整個場景的節點層級 (攤平的陣列)
     std::vector<SceneNode> nodes;

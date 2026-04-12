@@ -3,7 +3,7 @@
 
 void GeometryPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 geomSrvRange;
-    geomSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
+    geomSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
     CD3DX12_ROOT_PARAMETER1 geomParams[3];
     geomParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: 全域相機 (2 DWORDs)
     geomParams[1].InitAsConstants(16, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);                                       // b1: Model Matrix (16 DWORDs)
@@ -111,7 +111,7 @@ void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext
                 if (sub.isTransparent) continue;
 
                 int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < (int)mesh->texturePaths.size()) ? sub.materialIndex : 0;
-                CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(inst.srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 2, srvDescSize);
+                CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(inst.srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 3, srvDescSize);
                 cmdList->SetGraphicsRootDescriptorTable(2, srvHandle);
                 cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
                 ctx.currentDrawCalls++;

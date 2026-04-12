@@ -147,9 +147,9 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
         for (UINT m = 0; m < numMats; ++m) {
             matToGlobalIdx.push_back(destHeapIndex - 2); // 記錄相對於 Unbounded Array (從2開始) 的內部索引
 
-            // 每個材質包含 BaseColor 與 MetallicRoughness (2 張貼圖)
-            for (int t = 0; t < 2; ++t) {
-                int texIdx = m * 2 + t;
+			// 每個材質包含 BaseColor, MetallicRoughness, Normal 三種貼圖
+            for (int t = 0; t < 3; ++t) {
+                int texIdx = m * 3 + t;
                 if (texIdx < (int)inst.textures.size() && inst.textures[texIdx]) {
                     D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
                     sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;

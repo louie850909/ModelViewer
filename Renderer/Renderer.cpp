@@ -270,12 +270,16 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
         };
 
     UINT numMaterials = (std::max)(1, (int)mesh->texturePaths.size());
-    std::vector<TextureCpuData> baseColors(numMaterials), metallicRoughness(numMaterials);
+    std::vector<TextureCpuData> baseColors(numMaterials), metallicRoughness(numMaterials), normalMaps(numMaterials);
     for (size_t i = 0; i < numMaterials; i++) {
         baseColors[i] = PrepareTextureData(mesh->texturePaths[i], 0xFFFFFFFF);
         metallicRoughness[i] = PrepareTextureData(
             i < mesh->metallicRoughnessPaths.size() ? mesh->metallicRoughnessPaths[i] : "",
             0xFF00FF00);
+        // 讀取法線貼圖，若無則給予平坦法線預設值 (RGB = 128, 128, 255 -> 0xFFFF8080)
+        normalMaps[i] = PrepareTextureData(
+            i < mesh->normalPaths.size() ? mesh->normalPaths[i] : "",
+            0xFFFF8080);
     }
 
     std::lock_guard<std::mutex> lock(m_renderMutex);
@@ -394,7 +398,7 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     mesh->ibView = { mesh->indexBuffer->GetGPUVirtualAddress(),  (UINT)ibSize, DXGI_FORMAT_R32_UINT };
 
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = numMaterials * 2;
+    srvHeapDesc.NumDescriptors = numMaterials * 3;
     srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     CHECK(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&inst.srvHeap)));
@@ -441,6 +445,7 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
     for (size_t i = 0; i < numMaterials; i++) {
         UploadToGPU(baseColors[i]);
         UploadToGPU(metallicRoughness[i]);
+        UploadToGPU(normalMaps[i]);
     }
 
     cmdList->Close();

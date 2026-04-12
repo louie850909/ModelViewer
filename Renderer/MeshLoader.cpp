@@ -198,6 +198,8 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
     for (const auto& mat : model.materials) {
         std::string texPath = "";
         std::string mrPath = "";
+        std::string normalPath = "";
+
         // 檢查是否有 BaseColor 貼圖
         if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
             int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
@@ -210,8 +212,16 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
             int imgIdx = model.textures[texIdx].source;
             mrPath = baseDir + model.images[imgIdx].uri;
         }
+
+        if (mat.normalTexture.index >= 0) {
+            int texIdx = mat.normalTexture.index;
+            int imgIdx = model.textures[texIdx].source;
+            normalPath = baseDir + model.images[imgIdx].uri;
+        }
+
         mesh->texturePaths.push_back(texPath); // 就算沒有貼圖也塞入空字串佔位
         mesh->metallicRoughnessPaths.push_back(mrPath);
+        mesh->normalPaths.push_back(normalPath);
     }
 
     // 在迴圈外定義一個輔助函式，用來安全取得 Byte Stride

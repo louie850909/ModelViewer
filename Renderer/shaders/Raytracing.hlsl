@@ -251,6 +251,45 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         float4 mrColor = allTextures[NonUniformResourceIndex(textureIndex + 1)].SampleLevel(texSampler, localUV, 0);
         roughness = clamp(mrColor.g, 0.05f, 1.0f);
         metallic = saturate(mrColor.b);
+        
+        float3 localNormalMap = allTextures[NonUniformResourceIndex(textureIndex + 2)].SampleLevel(texSampler, localUV, 0).xyz;
+        localNormalMap = localNormalMap * 2.0f - 1.0f; // 轉換到 [-1, 1]
+        
+        // 反轉 Y 軸以修正 glTF (OpenGL) 與 DX12 的法線系統差異
+        localNormalMap.y = -localNormalMap.y;
+
+        float3 e1 = VertexBuffer[i1].position - VertexBuffer[i0].position;
+        float3 e2 = VertexBuffer[i2].position - VertexBuffer[i0].position;
+        float2 duv1 = uv1 - uv0;
+        float2 duv2 = uv2 - uv0;
+        
+        float det = duv1.x * duv2.y - duv1.y * duv2.x;
+        float3 worldTangent;
+        float r = 1.0f / det;
+        
+        // 【防呆機制】避免 UV 退化導致除以零 (NaN)
+        if (abs(det) < 1e-6f)
+        {
+            // 若沒有有效的 UV，給予一個預設切線避免崩潰
+            float3 up = abs(worldNormal.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
+            worldTangent = normalize(cross(up, worldNormal));
+        }
+        else
+        {
+            float3 objTangent = (e1 * duv2.y - e2 * duv1.y) * r;
+            float3x4 mO2W = ObjectToWorld3x4();
+            worldTangent = normalize(mul((float3x3) mO2W, objTangent));
+        }
+        
+        // 確保正交化
+        worldTangent = normalize(worldTangent - dot(worldTangent, worldNormal) * worldNormal);
+        // 利用 r 的正負號修正鏡像 UV 的副切線方向
+        float handedness = (r < 0.0f) ? -1.0f : 1.0f;
+        float3 worldBitangent = cross(worldNormal, worldTangent) * handedness;
+        
+        // 覆蓋掉原本平滑的 worldNormal，讓後續的折射與反射都有凹凸細節！
+        float3x3 tbn = float3x3(worldTangent, worldBitangent, worldNormal);
+        worldNormal = normalize(mul(localNormalMap, tbn));
     }
     else
     {
