@@ -10,10 +10,18 @@ struct Vertex {
 };
 
 struct SubMesh {
-    UINT indexOffset;
-    UINT indexCount;
+	UINT indexOffset = 0; // 在全局 Index Buffer 中的起始位置 (單位是 Index，不是 Byte)
+	UINT indexCount = 0;
     int  materialIndex = -1;
     bool isTransparent = false;
+
+    // KHR_materials_transmission
+    float transmissionFactor = 0.0f;  // 0=不透明, 1=全穿透
+    float ior = 1.5f;                 // 折射率，預設玻璃
+
+    // 新增：baseColorFactor (無貼圖時的基底色)
+    float baseColorFactor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    bool  hasBaseColorTexture = false;
 };
 
 struct SceneNode {
@@ -46,4 +54,12 @@ struct Mesh {
 
     // --- DXR BLAS 資源 ---
     std::vector<ComPtr<ID3D12Resource>> blasBuffers;
+};
+
+struct alignas(4) MaterialConstants {
+    uint32_t textureIndex;
+    float    transmissionFactor;
+    float    ior;
+    float    baseColorFactor[4];
+    uint32_t _pad;  // 對齊至 32 bytes
 };

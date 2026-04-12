@@ -32,7 +32,7 @@ void RayTracingPass::CreateLocalRootSignature(ID3D12Device5* device) {
     CD3DX12_ROOT_PARAMETER1 localParams[3];
     localParams[0].InitAsShaderResourceView(0, 1); // t0, space1: Index Buffer
     localParams[1].InitAsShaderResourceView(1, 1); // t1, space1: Vertex Buffer
-    localParams[2].InitAsConstants(4, 0, 1);       // b0, space1: 傳遞 textureIndex (16 bytes = 4 DWORDs)
+    localParams[2].InitAsConstants(8, 0, 1, D3D12_SHADER_VISIBILITY_ALL); // b0, space1: textureIndex(1) + transmissionFactor(1) + ior(1) + baseColorFactor(4) = 7 DWORDs → 對齊到 8
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC localRootSigDesc;
     localRootSigDesc.Init_1_1(3, localParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE);
@@ -75,7 +75,7 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 
     // 5. Pipeline Config (最大遞迴深度)
     D3D12_RAYTRACING_PIPELINE_CONFIG pipelineConfig = {};
-    pipelineConfig.MaxTraceRecursionDepth = 3; // Primary + Bounce + Shadow
+    pipelineConfig.MaxTraceRecursionDepth = 4; // Primary + Bounce + Shadow + Transmission
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, &pipelineConfig };
 
     // Local Root Signature
@@ -104,8 +104,8 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
     if (m_instanceCount == 0) return;
 
-    // 每個 HitGroup Record 大小: 32(ID) + 8(Index Buffer VA) + 8(Vertex Buffer VA) + 16(對齊) = 64 bytes
-    UINT hitGroupStride = 64;
+    // 每個 HitGroup Record: 32(ID) + 8(IndexBuf VA) + 8(VertexBuf VA) + 16(對齊) + 16(material consts) + padding = 96
+    UINT hitGroupStride = 96;
 
     // ★ 讓 Miss Table 大小加倍，容納兩個 Miss Shader (64 + 128)
     UINT sbtSize = 64 + 128 + (m_instanceCount * hitGroupStride);
@@ -187,10 +187,17 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
                 localArgs[0] = mesh->indexBuffer->GetGPUVirtualAddress() + sub.indexOffset * sizeof(uint32_t);
                 localArgs[1] = mesh->vertexBuffer->GetGPUVirtualAddress();
 
-                // 綁定 Material Constant (Texture Index)
-                uint32_t* localConstants = (uint32_t*)(hitGroupData + 32 + 16);
+                // 綁定 Material Constant
                 int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < matToGlobalIdx.size()) ? sub.materialIndex : 0;
-                localConstants[0] = matToGlobalIdx.empty() ? 0xFFFFFFFF : matToGlobalIdx[matIdx];
+                MaterialConstants* mc = reinterpret_cast<MaterialConstants*>(hitGroupData + 32 + 16);
+                mc->textureIndex = matToGlobalIdx.empty() ? 0xFFFFFFFF : matToGlobalIdx[matIdx];
+                mc->transmissionFactor = sub.transmissionFactor;
+                mc->ior = sub.ior;
+                mc->baseColorFactor[0] = sub.baseColorFactor[0];
+                mc->baseColorFactor[1] = sub.baseColorFactor[1];
+                mc->baseColorFactor[2] = sub.baseColorFactor[2];
+                mc->baseColorFactor[3] = sub.baseColorFactor[3];
+                mc->_pad = 0;
 
                 hitGroupData += hitGroupStride;
             }

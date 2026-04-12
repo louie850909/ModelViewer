@@ -45,6 +45,13 @@ StructuredBuffer<Vertex> VertexBuffer : register(t1, space1);
 cbuffer MaterialConstants : register(b0, space1)
 {
     uint textureIndex;
+    float transmissionFactor;
+    float ior;
+    float baseColorFactor_r;
+    float baseColorFactor_g;
+    float baseColorFactor_b;
+    float baseColorFactor_a;
+    uint _matPad;
 };
 
 Texture2D allTextures[] : register(t0, space2);
@@ -228,17 +235,27 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     float roughness = 0.5f;
     float metallic = 0.0f;
 
+    // 先把 baseColorFactor 轉到線性空間
+    float3 baseColorFactorLinear = float3(
+        pow(baseColorFactor_r, 2.2f),
+        pow(baseColorFactor_g, 2.2f),
+        pow(baseColorFactor_b, 2.2f)
+    );
+
     if (textureIndex != 0xFFFFFFFF)
     {
-        // 第一張貼圖：BaseColor
+        // 有貼圖：貼圖色 * baseColorFactor
         float4 texColor = allTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(texSampler, localUV, 0);
-        baseColor = pow(texColor.rgb, 2.2f); // sRGB 轉線性空間
-        
-        // 第二張貼圖：MetallicRoughness (緊接在 BaseColor 後面)
+        baseColor = pow(texColor.rgb, 2.2f) * baseColorFactorLinear;
+
         float4 mrColor = allTextures[NonUniformResourceIndex(textureIndex + 1)].SampleLevel(texSampler, localUV, 0);
-        // glTF 標準: Green 頻道 = 粗糙度, Blue 頻道 = 金屬度
-        roughness = clamp(mrColor.g, 0.05f, 1.0f); // 避免 0 造成 NaN
+        roughness = clamp(mrColor.g, 0.05f, 1.0f);
         metallic = saturate(mrColor.b);
+    }
+    else
+    {
+        // 無貼圖（如 PawnTopWhite）：直接用 baseColorFactor
+        baseColor = baseColorFactorLinear;
     }
 
     // 基礎反射率：非金屬預設為 4%，金屬則帶有原本的顏色
@@ -329,72 +346,120 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     // ==========================================
     // 3. 計算間接光照與材質反射 (Indirect Bounce)
     // ==========================================
-    if (payload.depth < 1)
+    if (payload.depth < 2)
     {
-        bool isFirstBounce = (payload.depth == 0);
+        bool isFirstBounce = (payload.depth == 0); // ← 必須在 depth++ 之前
         payload.depth++;
 
-        // 計算菲涅爾效應，並以此做為發生「鏡面反射」的機率
-        float3 F = FresnelSchlick(max(dot(worldNormal, V), 0.0f), F0);
-        float specProbability = clamp(lerp(max(F.r, max(F.g, F.b)), 1.0f, metallic), 0.05f, 0.95f);
-
+        float3 F_bounce = FresnelSchlick(max(dot(worldNormal, V), 0.0f), F0);
+        float specProbability = clamp(lerp(max(F_bounce.r, max(F_bounce.g, F_bounce.b)), 1.0f, metallic), 0.05f, 0.95f);
         float randomVal = rand(payload.seed);
-        float3 bounceDir;
 
-        if (randomVal < specProbability)
+        if (transmissionFactor > 0.0f)
         {
-            // 走鏡面反射路徑 (GGX VNDF 重要性採樣)
-            if (isFirstBounce)
-                payload.isSpecularBounce = true;
+            // Schlick Fresnel 近似：掠射角反射率高，正入射幾乎全折射
+            float cosTheta = abs(dot(-WorldRayDirection(), worldNormal));
+            float F_schlick = 0.04f + (1.0f - 0.04f) * pow(1.0f - cosTheta, 5.0f);
+            float fresnelReflect = F_schlick; // 只考慮表面反射率，不乘 transmissionFactor
 
-            float alpha = max(roughness * roughness, 0.001f);
-            float2 u = float2(rand(payload.seed), rand(payload.seed));
+            if (randomVal < fresnelReflect)
+            {
+                // ── 鏡面反射 ──
+                if (isFirstBounce)
+                    payload.isSpecularBounce = true;
 
-            // 1. 建立切線空間矩陣
-            float3x3 tbn = GetTBN(worldNormal);
-            
-            // 2. 將視角方向轉換到切線空間 (World -> Local)
-            float3 V_local = normalize(mul(tbn, V));
-            
-            // 3. 使用 VNDF 採樣微表面法線 (Half-vector)
-            float3 H_local = SampleGGXVNDF(V_local, alpha, alpha, u.x, u.y);
-            
-            // 4. 將微表面法線轉回世界空間 (Local -> World)
-            float3 H = normalize(mul(H_local, tbn));
-            
-            // 5. 計算反射方向
-            bounceDir = reflect(-V, H);
+                float alpha = max(roughness * roughness, 0.001f);
+                float2 u = float2(rand(payload.seed), rand(payload.seed));
+                float3x3 tbn = GetTBN(worldNormal);
+                float3 V_local = normalize(mul(tbn, V));
+                float3 H_local = SampleGGXVNDF(V_local, alpha, alpha, u.x, u.y);
+                float3 H = normalize(mul(H_local, tbn));
+                float3 rDir = reflect(-V, H);
 
-            // 6. 計算 shadowing-masking 權重 (G2 / G1) 以確保能量守恆
-            // 因為 VNDF 採樣的機率密度函數 (PDF) 剛好與 BRDF 中的 D 和 G1 抵銷，
-            // 所以我們只需乘上 Fresnel 與幾何遮蔽比率 (G2/G1) 即可。
-            float G1 = GeometrySchlickGGX(max(dot(worldNormal, V), 0.0f), roughness);
-            float G2 = GeometrySmith(worldNormal, V, bounceDir, roughness);
-            float G_weight = (G1 > 0.0001f) ? (G2 / G1) : 0.0f;
+                float G1 = GeometrySchlickGGX(max(dot(worldNormal, V), 0.0f), roughness);
+                float G2 = GeometrySmith(worldNormal, V, rDir, roughness);
+                float G_weight = (G1 > 0.0001f) ? (G2 / G1) : 0.0f;
+                payload.throughput *= (F_bounce * G_weight) / max(fresnelReflect, 0.001f);
 
-            payload.throughput *= (F * G_weight) / specProbability;
+                if (dot(rDir, worldNormal) > 0.0f)
+                {
+                    RayDesc bounceRay;
+                    bounceRay.Origin = worldPos + worldNormal * 0.001f;
+                    bounceRay.Direction = rDir;
+                    bounceRay.TMin = 0.01f;
+                    bounceRay.TMax = 10000.0f;
+                    TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, bounceRay, payload);
+                }
+            }
+            else
+            {
+                // ── 折射穿透 ──
+                if (isFirstBounce)
+                    payload.isSpecularBounce = false;
+
+                float3 incomingDir = WorldRayDirection();
+                float cosI = dot(-incomingDir, worldNormal);
+                bool entering = (cosI > 0.0f);
+                float eta = entering ? (1.0f / ior) : ior;
+                float3 refractNormal = entering ? worldNormal : -worldNormal;
+
+                float3 refractDir = refract(incomingDir, refractNormal, eta);
+                if (dot(refractDir, refractDir) < 0.001f)
+                    refractDir = reflect(incomingDir, refractNormal);
+
+                float refractProb = 1.0f - fresnelReflect;
+                // baseColor tint：模擬介質吸收（Beer-Lambert 近似）
+                payload.throughput *= (baseColor * transmissionFactor) / max(refractProb, 0.001f);
+
+                RayDesc transRay;
+                transRay.Origin = worldPos - refractNormal * 0.002f;
+                transRay.Direction = normalize(refractDir);
+                transRay.TMin = 0.01f;
+                transRay.TMax = 10000.0f;
+                TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, transRay, payload);
+            }
         }
         else
         {
-            // 走漫反射路徑
-            if (isFirstBounce)
-                payload.isSpecularBounce = false; // 紀錄為漫反射路徑
+            // ── 非 Transmission 材質：diffuse/specular bounce ──
+            float3 bounceDir;
 
-            bounceDir = getCosineWeightedSample(worldNormal, payload.seed);
-            float3 kD = (1.0f - F) * (1.0f - metallic);
-            payload.throughput *= (kD * baseColor) / (1.0f - specProbability);
-        }
+            if (randomVal < specProbability)
+            {
+                if (isFirstBounce)
+                    payload.isSpecularBounce = true;
 
-        // 發射下一彈跳的光線
-        if (dot(bounceDir, worldNormal) > 0.0f)
-        {
-            RayDesc bounceRay;
-            bounceRay.Origin = worldPos + worldNormal * 0.001f;
-            bounceRay.Direction = bounceDir;
-            bounceRay.TMin = 0.01f;
-            bounceRay.TMax = 10000.0f;
+                float alpha = max(roughness * roughness, 0.001f);
+                float2 u = float2(rand(payload.seed), rand(payload.seed));
+                float3x3 tbn = GetTBN(worldNormal);
+                float3 V_local = normalize(mul(tbn, V));
+                float3 H_local = SampleGGXVNDF(V_local, alpha, alpha, u.x, u.y);
+                float3 H = normalize(mul(H_local, tbn));
+                bounceDir = reflect(-V, H);
 
-            TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, bounceRay, payload);
+                float G1 = GeometrySchlickGGX(max(dot(worldNormal, V), 0.0f), roughness);
+                float G2 = GeometrySmith(worldNormal, V, bounceDir, roughness);
+                float G_weight = (G1 > 0.0001f) ? (G2 / G1) : 0.0f;
+                payload.throughput *= (F_bounce * G_weight) / specProbability;
+            }
+            else
+            {
+                if (isFirstBounce)
+                    payload.isSpecularBounce = false;
+                bounceDir = getCosineWeightedSample(worldNormal, payload.seed);
+                float3 kD = (1.0f - F_bounce) * (1.0f - metallic);
+                payload.throughput *= (kD * baseColor) / (1.0f - specProbability);
+            }
+
+            if (dot(bounceDir, worldNormal) > 0.0f)
+            {
+                RayDesc bounceRay;
+                bounceRay.Origin = worldPos + worldNormal * 0.001f;
+                bounceRay.Direction = bounceDir;
+                bounceRay.TMin = 0.01f;
+                bounceRay.TMax = 10000.0f;
+                TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, bounceRay, payload);
+            }
         }
     }
 }

@@ -285,7 +285,47 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
 
             // 記錄這個子網格使用哪個材質
             sub.materialIndex = prim.material;
-            sub.isTransparent = (prim.material >= 0 && model.materials[prim.material].alphaMode == "BLEND");
+            if (prim.material >= 0 && prim.material < (int)model.materials.size()) {
+                const auto& mat = model.materials[prim.material];
+
+                // 判斷 alpha blend
+                bool hasBlend = (mat.alphaMode == "BLEND");
+
+                // 判斷 KHR_materials_transmission
+                float transmission = 0.0f;
+                auto it = mat.extensions.find("KHR_materials_transmission");
+                if (it != mat.extensions.end()) {
+                    auto& extVal = it->second;
+                    if (extVal.IsObject() && extVal.Has("transmissionFactor")) {
+                        transmission = static_cast<float>(
+                            extVal.Get("transmissionFactor").GetNumberAsDouble());
+                    }
+                }
+                sub.transmissionFactor = transmission;
+                sub.isTransparent = hasBlend || (transmission > 0.0f);
+
+                // 解析 KHR_materials_ior
+                auto iorIt = mat.extensions.find("KHR_materials_ior");
+                if (iorIt != mat.extensions.end()) {
+                    auto& iorVal = iorIt->second;
+                    if (iorVal.IsObject() && iorVal.Has("ior")) {
+                        sub.ior = static_cast<float>(iorVal.Get("ior").GetNumberAsDouble());
+                    }
+                }
+
+                // 解析 baseColorFactor
+                const auto& bcf = mat.pbrMetallicRoughness.baseColorFactor;
+                if (bcf.size() == 4) {
+                    sub.baseColorFactor[0] = static_cast<float>(bcf[0]);
+                    sub.baseColorFactor[1] = static_cast<float>(bcf[1]);
+                    sub.baseColorFactor[2] = static_cast<float>(bcf[2]);
+                    sub.baseColorFactor[3] = static_cast<float>(bcf[3]);
+                }
+                sub.hasBaseColorTexture = (mat.pbrMetallicRoughness.baseColorTexture.index >= 0);
+            }
+            else {
+                sub.isTransparent = false;
+            }
 
             auto& idxAcc = model.accessors[prim.indices];
             auto& idxView = model.bufferViews[idxAcc.bufferView];
