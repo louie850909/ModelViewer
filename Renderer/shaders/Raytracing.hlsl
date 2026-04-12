@@ -286,7 +286,7 @@ void RayGen()
     float4 target = mul(float4(d.x, d.y, 1.0f, 1.0f), viewProjInv);
     float3 rayDir = normalize((target.xyz / target.w) - cameraPos);
 
-    const uint SPP = 2;
+    const uint SPP = 1;
     float3 accumDiffuse = float3(0, 0, 0);
     float3 accumSpecular = float3(0, 0, 0);
 
@@ -700,6 +700,17 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                 bounceRay.TMax = 10000.0f;
                 
                 // --- 準備發射反彈射線之前 ---
+                float maxThroughput = max(payload.throughput.r, max(payload.throughput.g, payload.throughput.b));
+                if (maxThroughput < 0.1f)
+                {
+                    float survivalProbability = max(maxThroughput, 0.05f);
+                    if (rand(payload.seed) > survivalProbability)
+                    {
+                        return; // 提早終止這條光線
+                    }
+                    payload.throughput /= survivalProbability; // 能量補償
+                }
+                
                 if (transmissionFactor > 0.0f)
                 {
                     // 玻璃與折射視為純 Delta Function 鏡面

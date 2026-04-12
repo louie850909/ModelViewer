@@ -364,15 +364,27 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     if (FAILED(cmdList->QueryInterface(IID_PPV_ARGS(&cmdList4)))) return;
 
     EnsureOutputTexture(ctx.gfx->GetDevice(), ctx.gfx->GetWidth(), ctx.gfx->GetHeight());
-    BuildTLAS(cmdList4.Get(), ctx);
+    // ==========================================
+    // 透過版本號決定是否重建 TLAS 與 SBT
+    // ==========================================
+    bool rebuildSBT = (ctx.scene->GetStructureRevision() != m_lastStructureRevision);
+    bool rebuildTLAS = rebuildSBT || (ctx.scene->GetTransformRevision() != m_lastTransformRevision);
+
+    if (rebuildTLAS) {
+        BuildTLAS(cmdList4.Get(), ctx);
+        m_lastTransformRevision = ctx.scene->GetTransformRevision();
+    }
+
     if (m_instanceCount == 0) return; // 場景為空則跳出
+
+    if (rebuildSBT) {
+        BuildSBT(ctx.gfx->GetDevice5(), ctx);
+        m_lastStructureRevision = ctx.scene->GetStructureRevision();
+    }
 
     // ==========================================
     // 光線追蹤派發 (Dispatch Rays)
     // ==========================================
-    // 每次繪製前動態更新 SBT
-    BuildSBT(ctx.gfx->GetDevice5(), ctx);
-
     // 綁定管線與 Descriptor Heap
     cmdList4->SetPipelineState1(m_dxrStateObject.Get());
     ID3D12DescriptorHeap* heaps[] = { m_descriptorHeap.Get() };
@@ -390,45 +402,50 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     UINT srvDescSize = ctx.gfx->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     auto device = ctx.gfx->GetDevice();
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handleTex(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 2, srvDescSize);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handleMarginal(handleTex, 1, srvDescSize);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handleCond(handleMarginal, 1, srvDescSize);
+    // 只有更換 HDRI 時才建立 Descriptor
+    if (m_envMapDirty) {
+        CD3DX12_CPU_DESCRIPTOR_HANDLE handleTex(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 2, srvDescSize);
+        CD3DX12_CPU_DESCRIPTOR_HANDLE handleMarginal(handleTex, 1, srvDescSize);
+        CD3DX12_CPU_DESCRIPTOR_HANDLE handleCond(handleMarginal, 1, srvDescSize);
 
-    if (m_envMap) {
-        // 1. EnvMap Texture (t1)
-        D3D12_SHADER_RESOURCE_VIEW_DESC texDesc = {};
-        texDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        texDesc.Format = m_envMap->texture->GetDesc().Format;
-        texDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        texDesc.Texture2D.MipLevels = m_envMap->texture->GetDesc().MipLevels;
-        device->CreateShaderResourceView(m_envMap->texture.Get(), &texDesc, handleTex);
+        if (m_envMap) {
+            // 1. EnvMap Texture (t1)
+            D3D12_SHADER_RESOURCE_VIEW_DESC texDesc = {};
+            texDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            texDesc.Format = m_envMap->texture->GetDesc().Format;
+            texDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            texDesc.Texture2D.MipLevels = m_envMap->texture->GetDesc().MipLevels;
+            device->CreateShaderResourceView(m_envMap->texture.Get(), &texDesc, handleTex);
 
-        // 2. Marginal CDF Buffer (t2)
-        D3D12_SHADER_RESOURCE_VIEW_DESC bufDesc = {};
-        bufDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        bufDesc.Format = DXGI_FORMAT_R32_FLOAT; // 以 float 陣列讀取
-        bufDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        bufDesc.Buffer.FirstElement = 0;
-        bufDesc.Buffer.NumElements = m_envMap->height;
-        device->CreateShaderResourceView(m_envMap->marginalCDF.Get(), &bufDesc, handleMarginal);
+            // 2. Marginal CDF Buffer (t2)
+            D3D12_SHADER_RESOURCE_VIEW_DESC bufDesc = {};
+            bufDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            bufDesc.Format = DXGI_FORMAT_R32_FLOAT; // 以 float 陣列讀取
+            bufDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            bufDesc.Buffer.FirstElement = 0;
+            bufDesc.Buffer.NumElements = m_envMap->height;
+            device->CreateShaderResourceView(m_envMap->marginalCDF.Get(), &bufDesc, handleMarginal);
 
-        // 3. Conditional CDF Buffer (t3)
-        bufDesc.Buffer.NumElements = m_envMap->width * m_envMap->height;
-        device->CreateShaderResourceView(m_envMap->conditionalCDF.Get(), &bufDesc, handleCond);
-    } else {
-        // 防呆 Null Descriptor
-        D3D12_SHADER_RESOURCE_VIEW_DESC nullTex = {};
-        nullTex.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        nullTex.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        nullTex.Texture2D.MipLevels = 1;
-        device->CreateShaderResourceView(nullptr, &nullTex, handleTex);
+            // 3. Conditional CDF Buffer (t3)
+            bufDesc.Buffer.NumElements = m_envMap->width * m_envMap->height;
+            device->CreateShaderResourceView(m_envMap->conditionalCDF.Get(), &bufDesc, handleCond);
+        }
+        else {
+            // 防呆 Null Descriptor
+            D3D12_SHADER_RESOURCE_VIEW_DESC nullTex = {};
+            nullTex.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            nullTex.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            nullTex.Texture2D.MipLevels = 1;
+            device->CreateShaderResourceView(nullptr, &nullTex, handleTex);
 
-        D3D12_SHADER_RESOURCE_VIEW_DESC nullBuf = {};
-        nullBuf.Format = DXGI_FORMAT_R32_FLOAT;
-        nullBuf.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        nullBuf.Buffer.NumElements = 1;
-        device->CreateShaderResourceView(nullptr, &nullBuf, handleMarginal);
-        device->CreateShaderResourceView(nullptr, &nullBuf, handleCond);
+            D3D12_SHADER_RESOURCE_VIEW_DESC nullBuf = {};
+            nullBuf.Format = DXGI_FORMAT_R32_FLOAT;
+            nullBuf.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            nullBuf.Buffer.NumElements = 1;
+            device->CreateShaderResourceView(nullptr, &nullBuf, handleMarginal);
+            device->CreateShaderResourceView(nullptr, &nullBuf, handleCond);
+        }
+		m_envMapDirty = false;
     }
 
     // 綁定 Root 參數

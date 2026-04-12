@@ -2,6 +2,9 @@
 #include "Scene.h"
 
 int Scene::AddMesh(std::shared_ptr<Mesh> mesh) {
+    // 結構與變換都發生改變
+    m_structureRevision++;
+    m_transformRevision++;
     return m_nextMeshId++;
 }
 
@@ -10,7 +13,12 @@ void Scene::RemoveMeshById(int meshId) {
     auto it = std::find_if(m_meshes.begin(), m_meshes.end(),
         [meshId](const MeshInstance& inst) { return inst.meshId == meshId; });
     if (it != m_meshes.end())
+    {
         m_meshes.erase(it);
+        // 結構與變換都發生改變
+        m_structureRevision++;
+        m_transformRevision++;
+    }
 }
 
 MeshInstance* Scene::FindInstance(int globalIndex, int& outLocalIndex) {
@@ -63,6 +71,8 @@ bool Scene::SetNodeTransform(int globalIndex, const float* inT, const float* inR
     if (inT) { node.t[0] = inT[0]; node.t[1] = inT[1]; node.t[2] = inT[2]; }
     if (inR) { node.r[0] = inR[0]; node.r[1] = inR[1]; node.r[2] = inR[2]; node.r[3] = inR[3]; }
     if (inS) { node.s[0] = inS[0]; node.s[1] = inS[1]; node.s[2] = inS[2]; }
+    // 只有 Transform 發生改變，SBT 不需要重建！
+    m_transformRevision++;
     return true;
 }
 

@@ -12,6 +12,7 @@ public:
 
     void SetEnvironmentMap(std::shared_ptr<HDRIResource> envMap) {
         m_envMap = envMap;
+        m_envMapDirty = true; // 標記環境貼圖已更新
     }
 
 private:
@@ -55,6 +56,11 @@ private:
     UINT m_instanceCount = 0;
     UINT m_sbtHitGroupOffset = 0;
     UINT m_sbtHitGroupStride = 0;
+
+    // 狀態追蹤變數
+    uint32_t m_lastStructureRevision = 0;
+    uint32_t m_lastTransformRevision = 0;
+    bool m_envMapDirty = true;
 
     void CreateRootSignature(ID3D12Device5* device);
     void CreateLocalRootSignature(ID3D12Device5* device);
