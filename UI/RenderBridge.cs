@@ -45,6 +45,10 @@ internal static class RenderBridge
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern bool Renderer_LoadModel([MarshalAs(UnmanagedType.LPStr)] string path, LoadCallback callback);
 
+    /// 載入環境貼圖，提供給 shader 使用。
+    [DllImport(DLL, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    public static extern void Renderer_LoadEnvironmentMap(string path);
+
     // ── Node API (globalIndex = meshId * MESH_NODE_STRIDE + localIndex) ──
 
     /// 場景內所有 mesh 的 node 總數。

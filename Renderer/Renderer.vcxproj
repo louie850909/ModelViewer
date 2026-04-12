@@ -280,6 +280,7 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     <ClInclude Include="GBuffer.h" />
     <ClInclude Include="GeometryPass.h" />
     <ClInclude Include="GraphicsContext.h" />
+    <ClInclude Include="HDRILoader.h" />
     <ClInclude Include="Helper.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="MeshLoader.h" />
@@ -298,6 +299,7 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     <ClCompile Include="GBuffer.cpp" />
     <ClCompile Include="GeometryPass.cpp" />
     <ClCompile Include="GraphicsContext.cpp" />
+    <ClCompile Include="HDRILoadercpp.cpp" />
     <ClCompile Include="MeshLoader.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

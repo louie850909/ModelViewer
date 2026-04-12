@@ -78,6 +78,9 @@
     <ClInclude Include="Helper.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="HDRILoader.h">
+      <Filter>ソース ファイル\Resources</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -118,6 +121,9 @@
     </ClCompile>
     <ClCompile Include="SpatialDenoiserPass.cpp">
       <Filter>ソース ファイル\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="HDRILoadercpp.cpp">
+      <Filter>ソース ファイル\Resources</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

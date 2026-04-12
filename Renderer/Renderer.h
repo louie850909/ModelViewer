@@ -6,6 +6,7 @@
 #include "IRenderPass.h"
 #include "TemporalDenoiserPass.h"
 #include "SpatialDenoiserPass.h"
+#include "RayTracingPass.h"
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -40,6 +41,8 @@ public:
     const std::vector<LightNode>& GetLights() const { return m_scene.GetLights(); }
 
     void SetRayTracingEnabled(bool enable) { m_rayTracingEnabled = enable; }
+
+    void LoadEnvironmentMap(const std::wstring& path);
 
 private:
     UINT m_frameCount = 0;
@@ -77,11 +80,14 @@ private:
     ComPtr<ID3D12Resource> m_lightCB;
     LightBufferData* m_mappedLightCB = nullptr;
 
+	// 環境貼圖資源
+    ComPtr<ID3D12Resource> m_envMapUpload;
+
     // --- 管線模組化 ---
     std::unique_ptr<IRenderPass> m_geomPass;
     std::unique_ptr<IRenderPass> m_lightPass;
     std::unique_ptr<IRenderPass> m_transparentPass;
-    std::unique_ptr<IRenderPass> m_rayTracingPass;
+    std::unique_ptr<RayTracingPass> m_rayTracingPass;
     std::unique_ptr<TemporalDenoiserPass> m_temporalDenoiserPass;
     std::unique_ptr<SpatialDenoiserPass> m_spatialDenoiserPass;
 

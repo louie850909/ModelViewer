@@ -61,8 +61,7 @@
   </PropertyGroup>
 
 	<ItemGroup>
-		<Content Include="$(SolutionDir)bin\x64\$(Configuration)\*.dll"
-				 Exclude="$(SolutionDir)bin\x64\$(Configuration)\Microsoft.*.dll;$(SolutionDir)bin\x64\$(Configuration)\WinRT*.dll;$(SolutionDir)bin\x64\$(Configuration)\System.*.dll">
+		<Content Include="$(SolutionDir)bin\x64\$(Configuration)\*.dll" Exclude="$(SolutionDir)bin\x64\$(Configuration)\Microsoft.*.dll;$(SolutionDir)bin\x64\$(Configuration)\WinRT*.dll;$(SolutionDir)bin\x64\$(Configuration)\System.*.dll">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<DeploymentContent>true</DeploymentContent>
 		</Content>
@@ -72,5 +71,11 @@
 			<DeploymentContent>true</DeploymentContent>
 			<Link>shaders\%(RecursiveDir)%(Filename)%(Extension)</Link>
 		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Content Update="Assets\env.hdr">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </Content>
 	</ItemGroup>
 </Project>

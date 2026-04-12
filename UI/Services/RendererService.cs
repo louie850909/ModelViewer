@@ -79,6 +79,15 @@ internal sealed class RendererService : IDisposable
         if (_initialized) RenderBridge.Renderer_RemoveModel(meshId);
     }
 
+    //  ─ 環境貼圖載入 ────────────────────────────────
+    public void LoadEnvironmentMap(string path)
+    {
+        if (_initialized)
+        {
+            RenderBridge.Renderer_LoadEnvironmentMap(path);
+        }
+    }
+
     // ── Node (globalIndex = meshId * MeshNodeStride + localIndex) ─────────
 
     public int GetTotalNodeCount() =>

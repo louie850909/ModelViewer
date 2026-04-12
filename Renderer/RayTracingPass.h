@@ -9,6 +9,10 @@ public:
     ID3D12Resource* GetDiffuseOutput() const { return m_diffuseOutput.Get(); }
     ID3D12Resource* GetSpecularOutput() const { return m_specularOutput.Get(); }
 
+    void SetEnvironmentMap(Microsoft::WRL::ComPtr<ID3D12Resource> envMap) {
+        m_envMap = envMap;
+    }
+
 private:
     void BuildTLAS(ID3D12GraphicsCommandList4* cmdList4, RenderPassContext& ctx);
     void EnsureOutputTexture(ID3D12Device* device, int width, int height);
@@ -30,6 +34,11 @@ private:
     ComPtr<ID3D12StateObject>   m_dxrStateObject;
     ComPtr<ID3D12Resource>      m_sbtBuffer;
     ComPtr<ID3D12DescriptorHeap> m_descriptorHeap; // 供 UAV 使用
+
+	// 環境貼圖資源
+    ComPtr<ID3D12Resource> m_envMap;
+    // 用於初始化時的暫存，之後可釋放
+    ComPtr<ID3D12Resource> m_envMapUpload;
 
     // 相機常數緩衝區
     ComPtr<ID3D12Resource> m_cameraCB;

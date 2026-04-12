@@ -4,9 +4,11 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using UI.Input;
+using UI.Services;
 using UI.ViewModels;
 using Windows.System;
 
@@ -55,6 +57,19 @@ public sealed partial class MainWindow : Window
 
             // 啟動時預設加入一個 Directional Light
             AddLight(0);
+
+            // 解析絕對路徑 (BaseDirectory 結尾通常帶有斜線，Path.Combine 會自動處理)
+            string hdrPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "env.hdr");
+
+            // 檢查檔案是否存在（安全防呆）
+            if (File.Exists(hdrPath))
+            {
+                _vm.Renderer.LoadEnvironmentMap(hdrPath);
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"[警告] 找不到環境貼圖: {hdrPath}");
+            }
         }
     }
 

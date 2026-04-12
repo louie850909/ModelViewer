@@ -5,26 +5,32 @@ void RayTracingPass::CreateRootSignature(ID3D12Device5* device) {
     CD3DX12_DESCRIPTOR_RANGE1 uavRange;
     uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
-    // 無限制大小的 SRV 陣列 (t0, space2)
+    // 材質 SRV 陣列 (t0, space2)
     CD3DX12_DESCRIPTOR_RANGE1 srvRange;
     srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, (UINT)-1, 0, 2, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE, 0);
 
-    CD3DX12_ROOT_PARAMETER1 rootParams[5];
-    rootParams[0].InitAsDescriptorTable(1, &uavRange);                 // u0: 輸出貼圖
-    rootParams[1].InitAsShaderResourceView(0);                         // t0: TLAS
+    // 專屬 EnvMap 的 Descriptor Table 範圍 (t1, space0)
+    CD3DX12_DESCRIPTOR_RANGE1 envRange;
+    envRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
+
+    CD3DX12_ROOT_PARAMETER1 rootParams[6];
+    rootParams[0].InitAsDescriptorTable(1, &uavRange);                 // u0, u1: 輸出貼圖
+    rootParams[1].InitAsShaderResourceView(0);                         // t0: TLAS (Buffer 可用 Root SRV)
     rootParams[2].InitAsConstantBufferView(0);                         // b0: Camera CB
     rootParams[3].InitAsConstantBufferView(1);                         // b1: Light CB
-	rootParams[4].InitAsDescriptorTable(1, &srvRange);                 // t0, space2: 材質 SRV 陣列全域貼圖
+    rootParams[4].InitAsDescriptorTable(1, &srvRange);                 // t0, space2: 材質 SRV 陣列
+    rootParams[5].InitAsDescriptorTable(1, &envRange);                 // t1, space0: EnvMap (紋理必須用 Table)
 
-    // 靜態採樣器 (s0, space0)
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC globalRootSigDesc;
-    globalRootSigDesc.Init_1_1(5, rootParams, 1, &sampler); // 傳入 sampler
+    globalRootSigDesc.Init_1_1(6, rootParams, 1, &sampler);
 
     ComPtr<ID3DBlob> blob, error;
-    D3DX12SerializeVersionedRootSignature(&globalRootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &error);
+    HRESULT hr = D3DX12SerializeVersionedRootSignature(&globalRootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &error);
+    if (FAILED(hr)) throw std::runtime_error("Serialize Root Signature Failed!");
+
     device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_globalRootSig));
 }
 
@@ -95,14 +101,17 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
     stateObjectDesc.NumSubobjects = index;
     stateObjectDesc.pSubobjects = subobjects;
 
-    device->CreateStateObject(&stateObjectDesc, IID_PPV_ARGS(&m_dxrStateObject));
+    HRESULT hr = device->CreateStateObject(&stateObjectDesc, IID_PPV_ARGS(&m_dxrStateObject));
+    if (FAILED(hr)) {
+        throw std::runtime_error("DXR Pipeline 建立失敗！請檢查 HLSL 語法或 Root Signature 匹配。");
+    }
 }
 
 // ==========================================
 // 動態 BuildSBT
 // ==========================================
 void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
-    if (m_instanceCount == 0) return;
+    if (m_instanceCount == 0 || !m_dxrStateObject) return;
 
     // 每個 HitGroup Record: 32(ID) + 8(IndexBuf VA) + 8(VertexBuf VA) + 16(對齊) + 16(material consts) + padding = 96
     UINT hitGroupStride = 96;
@@ -130,10 +139,10 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
     // HitGroup 起始偏移量往後推
     uint8_t* hitGroupData = pData + 192;
 
-    // 準備將各模型的 SRV 複製到 Global Heap 中 (索引 0 和 1 保留給 Diffuse 與 Specular UAV)
-    UINT destHeapIndex = 2;
+    // 起點為 3 (索引 0,1 給 UAV, 索引 2 給 EnvMap)
+    UINT destHeapIndex = 3;
     UINT srvDescSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    CD3DX12_CPU_DESCRIPTOR_HANDLE destHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 2, srvDescSize);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE destHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 3, srvDescSize);
 
     for (auto& inst : ctx.scene->GetMeshes()) {
         auto& mesh = inst.mesh;
@@ -145,7 +154,7 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
         if (numMats == 0) numMats = 1; // 至少會有一個預設材質
 
         for (UINT m = 0; m < numMats; ++m) {
-            matToGlobalIdx.push_back(destHeapIndex - 2); // 記錄相對於 Unbounded Array (從2開始) 的內部索引
+            matToGlobalIdx.push_back(destHeapIndex - 3); // ★ 減 3 對齊 HLSL 的陣列索引 0
 
 			// 每個材質包含 BaseColor, MetallicRoughness, Normal 三種貼圖
             for (int t = 0; t < 3; ++t) {
@@ -378,16 +387,39 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     m_mappedCameraCB->cameraPos = ctx.scene->GetCameraPos();
     m_mappedCameraCB->frameCount = ctx.frameCount;
 
+    UINT srvDescSize = ctx.gfx->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    // 動態建立 EnvMap 的 SRV (放置於 Heap 的 Index 2)
+    CD3DX12_CPU_DESCRIPTOR_HANDLE envCpuHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), 2, srvDescSize);
+    D3D12_SHADER_RESOURCE_VIEW_DESC envSrvDesc = {};
+    envSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    envSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+
+    if (m_envMap) {
+        envSrvDesc.Format = m_envMap->GetDesc().Format;
+        envSrvDesc.Texture2D.MipLevels = m_envMap->GetDesc().MipLevels;
+        ctx.gfx->GetDevice()->CreateShaderResourceView(m_envMap.Get(), &envSrvDesc, envCpuHandle);
+    }
+    else {
+        // 安全防護：若尚未載入 HDRI，建立一個合法的 Null Descriptor，避免 DX12 崩潰
+        envSrvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        envSrvDesc.Texture2D.MipLevels = 1;
+        ctx.gfx->GetDevice()->CreateShaderResourceView(nullptr, &envSrvDesc, envCpuHandle);
+    }
+
     // 綁定 Root 參數
-    cmdList4->SetComputeRootDescriptorTable(0, m_descriptorHeap->GetGPUDescriptorHandleForHeapStart()); // UAV
+    cmdList4->SetComputeRootDescriptorTable(0, m_descriptorHeap->GetGPUDescriptorHandleForHeapStart()); // UAV (Index 0,1)
     cmdList4->SetComputeRootShaderResourceView(1, m_tlasBuffer->GetGPUVirtualAddress());              // TLAS
     cmdList4->SetComputeRootConstantBufferView(2, m_cameraCB->GetGPUVirtualAddress());                // Camera
-	cmdList4->SetComputeRootConstantBufferView(3, ctx.lightCB->GetGPUVirtualAddress());  		        // Light
+    cmdList4->SetComputeRootConstantBufferView(3, ctx.lightCB->GetGPUVirtualAddress());               // Light
 
-    // 綁定全域的貼圖陣列 (指向 Heap 的 index 2)
-    UINT srvDescSize = ctx.gfx->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    CD3DX12_GPU_DESCRIPTOR_HANDLE srvTable(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), 2, srvDescSize);
-    cmdList4->SetComputeRootDescriptorTable(4, srvTable);
+    // 綁定全域的貼圖陣列 (指向 Heap 的 index 3)
+    CD3DX12_GPU_DESCRIPTOR_HANDLE matTable(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), 3, srvDescSize);
+    cmdList4->SetComputeRootDescriptorTable(4, matTable);
+
+    // 綁定 EnvMap (指向 Heap 的 index 2)
+    CD3DX12_GPU_DESCRIPTOR_HANDLE envTable(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), 2, srvDescSize);
+    cmdList4->SetComputeRootDescriptorTable(5, envTable);
 
     // 設定 SBT 區塊位置與大小
     D3D12_DISPATCH_RAYS_DESC rayDesc = {};

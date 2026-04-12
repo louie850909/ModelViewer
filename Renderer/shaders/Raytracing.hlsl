@@ -3,6 +3,7 @@
 RaytracingAccelerationStructure Scene : register(t0, space0);
 RWTexture2D<float4> DiffuseTarget : register(u0, space0);
 RWTexture2D<float4> SpecularTarget : register(u1, space0);
+Texture2D<float4> EnvMap : register(t1, space0);
 
 cbuffer CameraParams : register(b0, space0)
 {
@@ -57,6 +58,9 @@ cbuffer MaterialConstants : register(b0, space1)
 Texture2D allTextures[] : register(t0, space2);
 SamplerState texSampler : register(s0, space0);
 
+static const float INV_PI = 0.318309886f;
+static const float INV_TWO_PI = 0.159154943f;
+
 // ==========================================
 // 亂數與取樣工具
 // ==========================================
@@ -101,6 +105,26 @@ float3 getCosineWeightedSample(float3 n, inout uint seed)
     return normalize(t * x + b * y + n * z);
 }
 
+// 將 3D 方向向量轉換為 2D 球面 UV 座標
+float2 GetSphericalUV(float3 v)
+{
+    // 假設 Y 軸朝上 (Y-Up)
+    // atan2 取得水平經度 [-PI, PI] -> u
+    // asin 取得垂直緯度 [-PI/2, PI/2] -> v
+    float2 uv = float2(atan2(v.z, v.x), asin(v.y));
+    
+    // 映射到 [-0.5, 0.5]
+    uv *= float2(INV_TWO_PI, INV_PI);
+    
+    // 映射到 [0, 1]
+    uv += 0.5f;
+    
+    // DirectX 的 V 座標起點在上方，故反轉 V
+    uv.y = 1.0f - uv.y;
+    
+    return uv;
+}
+
 // ==========================================
 // Payloads
 // ==========================================
@@ -132,7 +156,13 @@ void ShadowMiss(inout ShadowPayload payload)
 [shader("miss")]
 void Miss(inout Payload payload)
 {
-    float3 skyColor = float3(0.2f, 0.4f, 0.8f);
+    float3 rayDir = WorldRayDirection();
+    float2 envUV = GetSphericalUV(rayDir);
+    
+    // 採樣 HDRI，光追中需明確指定 MipLevel (通常設為 0)
+    // 未來可將 1.0f 提取至 CameraParams CB 中作為動態的 Exposure / EnvIntensity
+    float3 skyColor = EnvMap.SampleLevel(texSampler, envUV, 0).rgb * 1.0f;
+
     // 根據路徑屬性，將天空顏色存入對應的能量槽
     if (payload.depth == 0)
     {

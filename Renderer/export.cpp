@@ -220,4 +220,12 @@ extern "C" {
         return true;
     }
 
+	// ---------------------------------------------------------------------------
+	// 環境貼圖
+	// ---------------------------------------------------------------------------
+    __declspec(dllexport) void Renderer_LoadEnvironmentMap(const wchar_t* path) {
+        std::wstring filePath(path);
+        g_renderer.LoadEnvironmentMap(filePath);
+    }
+
 } // extern "C"
