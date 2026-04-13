@@ -41,9 +41,17 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
 
     // 取得中心點顏色 (確保持續處於 Demodulated 狀態，也就是純光照 Irradiance)
     float4 centerDiff = InputDiffuse[DTid.xy];
-    if (passIndex == 0)
-        centerDiff.rgb /= centerAlbedo;
     float4 centerSpec = InputSpecular[DTid.xy];
+    if (passIndex == 0)
+    {
+        centerDiff.rgb /= centerAlbedo;
+        // ==========================================
+        // 高光亮度穩定化 (Tonemap Demodulation)
+        // 壓制極端的高光 HDR 值，避免空間模糊時光暈爆開
+        // ==========================================
+        float specLuma = dot(centerSpec.rgb, LUMINANCE_VECTOR);
+        centerSpec.rgb /= (1.0f + specLuma);
+    }
 
     // ★ 核心 1：計算「純光照」的亮度，而非 Albedo 亮度
     float centerLumaDiff = dot(centerDiff.rgb, LUMINANCE_VECTOR);
@@ -71,9 +79,15 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             int2 samplePos = clamp(int2(DTid.xy) + offset, int2(0, 0), int2(width - 1, height - 1));
 
             float4 sampleDiff = InputDiffuse[samplePos];
-            if (passIndex == 0)
-                sampleDiff.rgb /= max(AlbedoMap[samplePos].rgb, 0.001f);
             float4 sampleSpec = InputSpecular[samplePos];
+            if (passIndex == 0)
+            {
+                sampleDiff.rgb /= max(AlbedoMap[samplePos].rgb, 0.001f);
+                
+                // 採樣點的亮度穩定
+                float sSpecLuma = dot(sampleSpec.rgb, LUMINANCE_VECTOR);
+                sampleSpec.rgb /= (1.0f + sSpecLuma);
+            }
 
             float3 sampleNormal = NormalMap[samplePos].xyz;
             float3 samplePosWorld = WorldPosMap[samplePos].xyz;
@@ -130,9 +144,17 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     {
         // 恢復 Albedo (Remodulation)
         finalDiffuse.rgb *= centerAlbedo;
+        
+
+        // 高光重調變 (Inverse Tonemap)
+        // 將被壓制的能量還原，確保 PBR 金屬反射依舊閃耀
+        // 限制亮度最高為 0.99f 以避免除以零
+        float fSpecLuma = clamp(dot(finalSpecular.rgb, LUMINANCE_VECTOR), 0.0f, 0.99f);
+        finalSpecular.rgb /= (1.0f - fSpecLuma);
+        
         float3 combined = finalDiffuse.rgb + finalSpecular.rgb;
 
-        // 保留您原本的 ToneMapping 與 Gamma 校正
+        // ToneMapping 與 Gamma 校正
         combined = combined / (combined + float3(1.0f, 1.0f, 1.0f));
         combined = pow(combined, float3(1.0f / 2.2f, 1.0f / 2.2f, 1.0f / 2.2f));
 

@@ -78,6 +78,42 @@ float2 GetDilatedVelocity(int2 pos)
     return dilatedVel;
 }
 
+// Catmull-Rom 雙立方插值函式
+float4 SampleTextureCatmullRom(Texture2D<float4> tex, SamplerState linearSampler, float2 uv, float2 texSize)
+{
+    float2 samplePos = uv * texSize;
+    float2 texPos1 = floor(samplePos - 0.5f) + 0.5f;
+    float2 f = samplePos - texPos1;
+
+    // 計算 Catmull-Rom 權重
+    float2 w0 = f * (-0.5f + f * (1.0f - 0.5f * f));
+    float2 w1 = 1.0f + f * f * (-2.5f + 1.5f * f);
+    float2 w2 = f * (0.5f + f * (2.0f - 1.5f * f));
+    float2 w3 = f * f * (-0.5f + 0.5f * f);
+
+    float2 w12 = w1 + w2;
+    float2 offset12 = w2 / max(w12, 0.00001f);
+
+    float2 texPos0 = texPos1 - 1.0f;
+    float2 texPos3 = texPos1 + 2.0f;
+    float2 texPos12 = texPos1 + offset12;
+
+    // 正規化回 UV 空間
+    texPos0 /= texSize;
+    texPos3 /= texSize;
+    texPos12 /= texSize;
+
+    float4 result = 0.0f;
+    // 5 次硬體雙線性採樣
+    result += tex.SampleLevel(linearSampler, float2(texPos12.x, texPos12.y), 0) * w12.x * w12.y;
+    result += tex.SampleLevel(linearSampler, float2(texPos0.x, texPos12.y), 0) * w0.x * w12.y;
+    result += tex.SampleLevel(linearSampler, float2(texPos3.x, texPos12.y), 0) * w3.x * w12.y;
+    result += tex.SampleLevel(linearSampler, float2(texPos12.x, texPos0.y), 0) * w12.x * w0.y;
+    result += tex.SampleLevel(linearSampler, float2(texPos12.x, texPos3.y), 0) * w12.x * w3.y;
+
+    return max(result, 0.0f);
+}
+
 [numthreads(8, 8, 1)]
 void CSMain(uint3 DTid : SV_DispatchThreadID)
 {
@@ -184,8 +220,9 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
 
         if (historyValid > 0.01f)
         {
-            histDiffuse = HistoryDiffuse.SampleLevel(LinearSampler, prevUV, 0);
-            histSpecular = HistorySpecular.SampleLevel(LinearSampler, prevUV, 0);
+            float2 texSize = float2(width, height);
+            histDiffuse = SampleTextureCatmullRom(HistoryDiffuse, LinearSampler, prevUV, texSize);
+            histSpecular = SampleTextureCatmullRom(HistorySpecular, LinearSampler, prevUV, texSize);
 
             float3 histY_diff = RGBToYCoCg(histDiffuse.rgb);
             histY_diff = clamp(histY_diff, mu_diff - 1.5f * sigma_diff, mu_diff + 1.5f * sigma_diff);
