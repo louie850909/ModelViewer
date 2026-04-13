@@ -81,6 +81,9 @@
     <ClInclude Include="HDRILoader.h">
       <Filter>ソース ファイル\Resources</Filter>
     </ClInclude>
+    <ClInclude Include="PostProcessPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -125,6 +128,9 @@
     <ClCompile Include="HDRILoadercpp.cpp">
       <Filter>ソース ファイル\Resources</Filter>
     </ClCompile>
+    <ClCompile Include="PostProcessPass.cpp">
+      <Filter>ソース ファイル\RenderPass</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -155,6 +161,9 @@
       <Filter>Shaders</Filter>
     </CustomBuild>
     <CustomBuild Include="shaders\SpatialFilter.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="shaders\PostProcess_CAS.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
   </ItemGroup>

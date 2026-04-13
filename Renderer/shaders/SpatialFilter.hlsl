@@ -107,7 +107,15 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             float lumaWeightSpec = exp(-abs(centerLumaSpec - sampleLumaSpec) / (stdDevSpec * 4.0f + 0.001f));
             
             // 粗糙度越低，Specular 越像鏡面，空間擴散必須越小以保留清晰反射
-            float roughnessWeight = exp(-(x * x + y * y) / max(centerRoughness * centerRoughness * 10.0f, 0.05f));
+            float roughnessWeight = exp(-(x * x + y * y) / max(centerRoughness * centerRoughness * 2.0f, 0.05f));
+            
+            // 額外防護機制：
+            // 如果表面極度光滑 (Roughness < 0.1f)，它應該表現得像鏡子。
+            // 這時我們強制削弱所有非中心點 (x!=0 或 y!=0) 的權重貢獻，避免周圍像素污染高光反射。
+            if (centerRoughness < 0.1f && (x != 0 || y != 0))
+            {
+                roughnessWeight *= 0.05f; // 強力截斷
+            }
             
             float specW = spatialWeight * normalWeight * posWeight * lumaWeightSpec * roughnessWeight;
             sumSpecular += sampleSpec * specW;

@@ -57,6 +57,8 @@ bool Renderer::Init(IUnknown* panelUnknown, int width, int height) {
             m_spatialDenoiserPass->SetTemporalPass(m_temporalDenoiserPass.get()); // 綁定關聯
             m_spatialDenoiserPass->Init(m_ctx.GetDevice());
         }
+        m_postProcessPass = std::make_unique<PostProcessPass>();
+        m_postProcessPass->Init(m_ctx.GetDevice());
 
         m_lastFrameTime = std::chrono::high_resolution_clock::now();
         return true;
@@ -211,6 +213,11 @@ void Renderer::RenderFrame() {
         m_rayTracingPass->Execute(cmdList, passCtx);
         m_temporalDenoiserPass->Execute(cmdList, passCtx);
         m_spatialDenoiserPass->Execute(cmdList, passCtx);
+
+        // 取得降噪後的組合結果
+        passCtx.rawDiffuseGI = m_spatialDenoiserPass->GetDenoisedOutput();
+        m_postProcessPass->SetSharpness(0.6f);
+        m_postProcessPass->Execute(cmdList, passCtx);
     }
     else {
         // 進入傳統光柵化管線

@@ -285,6 +285,7 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="MeshLoader.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="PostProcessPass.h" />
     <ClInclude Include="RayTracingPass.h" />
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="IRenderPass.h" />
@@ -307,6 +308,7 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="PostProcessPass.cpp" />
     <ClCompile Include="RayTracingPass.cpp" />
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Scene.cpp" />
@@ -422,6 +424,27 @@ xcopy /Y /D /E /I "$(ProjectDir)shaders\*.cso" "$(SolutionDir)bin\$(Platform)\$(
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"
 </Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\PostProcess_CAS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc -T cs_6_0 -E CSMain -D COMPILE_CS=1 -Fo "$(ProjectDir)%(RelativeDir)%(Filename).cso" "%(Identity)"</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)%(RelativeDir)%(Filename).cso</Outputs>
     </CustomBuild>
   </ItemGroup>

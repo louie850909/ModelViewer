@@ -174,21 +174,11 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
     };
     cmdList->ResourceBarrier(4, postCompute);
 
-    // uavDiffuse 包含了最終合成的畫面
-    auto finalOutput = uavDiffuse;
-    auto backBuffer = ctx.gfx->GetCurrentBackBuffer();
-
-    D3D12_RESOURCE_BARRIER copyBarriers[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST),
-        CD3DX12_RESOURCE_BARRIER::Transition(finalOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE)
-    };
-    cmdList->ResourceBarrier(2, copyBarriers);
-
-    cmdList->CopyResource(backBuffer, finalOutput);
-
-    D3D12_RESOURCE_BARRIER copyBarriersPost[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        CD3DX12_RESOURCE_BARRIER::Transition(finalOutput, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-    };
-    cmdList->ResourceBarrier(2, copyBarriersPost);
+    // 將 finalOutput 轉為 SRV，供 PostProcessPass 讀取 
+    D3D12_RESOURCE_BARRIER transitionToSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_finalOutput.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+    );
+    cmdList->ResourceBarrier(1, &transitionToSRV);
 }

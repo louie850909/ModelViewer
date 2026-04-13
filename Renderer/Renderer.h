@@ -12,6 +12,7 @@
 #include <mutex>
 #include <memory>
 #include "HDRILoader.h"
+#include "PostProcessPass.h"
 
 class Renderer {
 public:
@@ -93,6 +94,7 @@ private:
     std::unique_ptr<RayTracingPass> m_rayTracingPass;
     std::unique_ptr<TemporalDenoiserPass> m_temporalDenoiserPass;
     std::unique_ptr<SpatialDenoiserPass> m_spatialDenoiserPass;
+    std::unique_ptr<PostProcessPass> m_postProcessPass;
 
     std::atomic<bool> m_isShuttingDown{ false };
     std::atomic<int>   m_statVertices{ 0 };

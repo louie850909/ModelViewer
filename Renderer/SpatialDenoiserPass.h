@@ -9,6 +9,11 @@ public:
 
     void SetTemporalPass(TemporalDenoiserPass* tempPass) { m_temporalPass = tempPass; }
 
+    // 取得最後降噪完成後的組合圖像 (Diffuse + Specular Remodulated)
+    ID3D12Resource* GetDenoisedOutput() const {
+        return m_finalOutput.Get();
+    }
+
 private:
     void EnsureResources(ID3D12Device* device, int width, int height);
 
