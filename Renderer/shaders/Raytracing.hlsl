@@ -319,7 +319,7 @@ void RayGen()
         ray.TMin = 0.001f;
         ray.TMax = 10000.0f;
 
-        TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
+        TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 2, 0, ray, payload);
 
         // 螢火蟲抑制 (Firefly Clamping)
         // 限制單次光線反彈帶回來的最大能量，避免 HDRI 極亮點摧毀時域累積的歷史
@@ -511,7 +511,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
             ShadowPayload shadowPayload;
             shadowPayload.isHit = true;
-            TraceRay(Scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 1, 1, shadowRay, shadowPayload);
+            TraceRay(Scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 1, 2, 1, shadowRay, shadowPayload);
 
             if (!shadowPayload.isHit)
             {
@@ -580,7 +580,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
             ShadowPayload shadowPayloadEnv;
             shadowPayloadEnv.isHit = true;
-            TraceRay(Scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 1, 1, shadowRayEnv, shadowPayloadEnv);
+            TraceRay(Scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 1, 2, 1, shadowRayEnv, shadowPayloadEnv);
 
             if (!shadowPayloadEnv.isHit)
             {
@@ -681,7 +681,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                     bounceRay.Direction = rDir;
                     bounceRay.TMin = 0.01f;
                     bounceRay.TMax = 10000.0f;
-                    TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, bounceRay, payload);
+                    TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 2, 0, bounceRay, payload);
                 }
             }
             else
@@ -725,7 +725,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                 transRay.Direction = normalize(refractDir);
                 transRay.TMin = 0.01f;
                 transRay.TMax = 10000.0f;
-                TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, transRay, payload);
+                TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 2, 0, transRay, payload);
             }
         }
         else
@@ -803,8 +803,67 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                     payload.lastRoughness = roughness;
                 }
                 
-                TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 1, 0, bounceRay, payload);
+                TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 2, 0, bounceRay, payload);
             }
         }
+    }
+}
+
+// ==========================================
+// Any Hit Shaders (Alpha Cutout / Mask)
+// ==========================================
+
+[shader("anyhit")]
+void AnyHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    if (textureIndex == 0xFFFFFFFF)
+        return;
+
+    uint primitiveIndex = PrimitiveIndex();
+    uint i0 = IndexBuffer.Load(primitiveIndex * 12 + 0);
+    uint i1 = IndexBuffer.Load(primitiveIndex * 12 + 4);
+    uint i2 = IndexBuffer.Load(primitiveIndex * 12 + 8);
+    
+    float2 uv0 = VertexBuffer[i0].uv;
+    float2 uv1 = VertexBuffer[i1].uv;
+    float2 uv2 = VertexBuffer[i2].uv;
+    
+    float3 barycentrics = float3(1.0f - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
+    float2 localUV = uv0 * barycentrics.x + uv1 * barycentrics.y + uv2 * barycentrics.z;
+    
+    // 採樣 Base Color 貼圖的 Alpha 通道
+    float alpha = allTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(texSampler, localUV, 0).a;
+    alpha *= baseColorFactor_a;
+    
+    if (alpha < 0.5f)
+    {
+        IgnoreHit(); // 透明區域，忽略這次碰撞
+    }
+}
+
+[shader("anyhit")]
+void ShadowAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    if (textureIndex == 0xFFFFFFFF)
+        return;
+
+    uint primitiveIndex = PrimitiveIndex();
+    uint i0 = IndexBuffer.Load(primitiveIndex * 12 + 0);
+    uint i1 = IndexBuffer.Load(primitiveIndex * 12 + 4);
+    uint i2 = IndexBuffer.Load(primitiveIndex * 12 + 8);
+    
+    float2 uv0 = VertexBuffer[i0].uv;
+    float2 uv1 = VertexBuffer[i1].uv;
+    float2 uv2 = VertexBuffer[i2].uv;
+    
+    float3 barycentrics = float3(1.0f - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
+    float2 localUV = uv0 * barycentrics.x + uv1 * barycentrics.y + uv2 * barycentrics.z;
+    
+    float alpha = allTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(texSampler, localUV, 0).a;
+    alpha *= baseColorFactor_a;
+    
+    if (alpha < 0.5f)
+    {
+        IgnoreHit();
     }
 }

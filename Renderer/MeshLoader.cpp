@@ -298,8 +298,8 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
             if (prim.material >= 0 && prim.material < (int)model.materials.size()) {
                 const auto& mat = model.materials[prim.material];
 
-                // 判斷 alpha blend
-                bool hasBlend = (mat.alphaMode == "BLEND");
+                // 判斷是否為樹葉類 (Mask)
+                sub.isAlphaTested = (mat.alphaMode == "MASK");
 
                 // 判斷 KHR_materials_transmission
                 float transmission = 0.0f;
@@ -312,7 +312,8 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
                     }
                 }
                 sub.transmissionFactor = transmission;
-                sub.isTransparent = hasBlend || (transmission > 0.0f);
+                // 判斷是否為玻璃/半透明 (Blend 或 穿透)
+                sub.isTransparent = (mat.alphaMode == "BLEND") || (transmission > 0.0f);
 
                 // 解析 KHR_materials_ior
                 auto iorIt = mat.extensions.find("KHR_materials_ior");

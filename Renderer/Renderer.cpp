@@ -384,7 +384,7 @@ void Renderer::UploadMeshToGpu(std::shared_ptr<Mesh> mesh, int meshId) {
             geomDesc.Triangles.VertexCount = (UINT)mesh->vertices.size();
             geomDesc.Triangles.VertexBuffer.StartAddress = mesh->vertexBuffer->GetGPUVirtualAddress();
             geomDesc.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-            geomDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+			geomDesc.Flags = sub.isAlphaTested ? D3D12_RAYTRACING_GEOMETRY_FLAG_NONE : D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 
             D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
             inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
