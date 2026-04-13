@@ -50,7 +50,7 @@ void RayTracingPass::CreateLocalRootSignature(ID3D12Device5* device) {
 
 void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
     // 為了相容性，這裡使用原生 Array 方式建立 Subobjects
-    D3D12_STATE_SUBOBJECT subobjects[7];
+    D3D12_STATE_SUBOBJECT subobjects[12];
     UINT index = 0;
 
     // 1. DXIL Library (載入編譯好的 CSO)
@@ -61,12 +61,22 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
     dxilLibDesc.DXILLibrary = dxilBytecode;
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, &dxilLibDesc };
 
-    // 2. Hit Group
-    D3D12_HIT_GROUP_DESC hitGroupDesc = {};
-    hitGroupDesc.HitGroupExport = L"HitGroup";
-    hitGroupDesc.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
-    hitGroupDesc.ClosestHitShaderImport = L"ClosestHit";
-    subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, &hitGroupDesc };
+    // --- 2. 建立四種不同的 HitGroup ---
+    // (A) 主光線 - 不透明 (最快，無 AnyHit)
+    D3D12_HIT_GROUP_DESC hgPriOpaque = { L"HitGroup_Primary_Opaque", D3D12_HIT_GROUP_TYPE_TRIANGLES, nullptr, L"ClosestHit", nullptr };
+    subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, &hgPriOpaque };
+
+    // (B) 主光線 - 透明遮罩 (包含 AnyHit)
+    D3D12_HIT_GROUP_DESC hgPriAlpha = { L"HitGroup_Primary_Alpha", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"AnyHit", L"ClosestHit", nullptr };
+    subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, &hgPriAlpha };
+
+    // (C) 陰影光線 - 不透明 (空 HitGroup，純粹靠 DXR 預設遮擋)
+    D3D12_HIT_GROUP_DESC hgShadowOpaque = { L"HitGroup_Shadow_Opaque", D3D12_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr };
+    subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, &hgShadowOpaque };
+
+    // (D) 陰影光線 - 透明遮罩 (只包含 ShadowAnyHit)
+    D3D12_HIT_GROUP_DESC hgShadowAlpha = { L"HitGroup_Shadow_Alpha", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ShadowAnyHit", nullptr, nullptr };
+    subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, &hgShadowAlpha };
 
     // 3. Shader Config (Payload 大小)
     D3D12_RAYTRACING_SHADER_CONFIG shaderConfig = {};
@@ -90,10 +100,10 @@ void RayTracingPass::CreatePipelineState(ID3D12Device5* device) {
 
     // 將 Local Root Signature 關聯到 HitGroup
     D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-    association.NumExports = 1;
-    LPCWSTR exportName = L"HitGroup";
-    association.pExports = &exportName;
-    association.pSubobjectToAssociate = &subobjects[index - 1];
+    LPCWSTR hitGroupExports[] = { L"HitGroup_Primary_Opaque", L"HitGroup_Primary_Alpha", L"HitGroup_Shadow_Opaque", L"HitGroup_Shadow_Alpha" };
+    association.NumExports = 4;
+    association.pExports = hitGroupExports;
+    association.pSubobjectToAssociate = &subobjects[index - 1]; // 指向 Local Root Sig
     subobjects[index++] = { D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION, &association };
 
     D3D12_STATE_OBJECT_DESC stateObjectDesc = {};
@@ -117,7 +127,7 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
     UINT hitGroupStride = 96;
 
     // ★ 讓 Miss Table 大小加倍，容納兩個 Miss Shader (64 + 128)
-    UINT sbtSize = 64 + 128 + (m_instanceCount * hitGroupStride);
+    UINT sbtSize = 64 + 128 + (m_instanceCount * hitGroupStride * 2);
     sbtSize = (sbtSize + 255) & ~255; // 256 byte 對齊
 
     if (!m_sbtBuffer || m_sbtBuffer->GetDesc().Width < sbtSize) {
@@ -188,15 +198,19 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
 
             for (int subIdx : node.subMeshIndices) {
                 const auto& sub = mesh->subMeshes[subIdx];
+                // 取得這個 SubMesh 是否包含透明通道
+                bool needsAnyHit = sub.isAlphaTested;
 
-                memcpy(hitGroupData, stateObjectProps->GetShaderIdentifier(L"HitGroup"), 32);
+                // ==========================================
+                // 寫入第一個紀錄: Primary Ray HitGroup
+                // ==========================================
+                LPCWSTR priHitGroup = needsAnyHit ? L"HitGroup_Primary_Alpha" : L"HitGroup_Primary_Opaque";
+                memcpy(hitGroupData, stateObjectProps->GetShaderIdentifier(priHitGroup), 32);
 
                 D3D12_GPU_VIRTUAL_ADDRESS* localArgs = (D3D12_GPU_VIRTUAL_ADDRESS*)(hitGroupData + 32);
-                // 對齊 HLSL 內的 PrimitiveIndex() 偏移量
                 localArgs[0] = mesh->indexBuffer->GetGPUVirtualAddress() + sub.indexOffset * sizeof(uint32_t);
                 localArgs[1] = mesh->vertexBuffer->GetGPUVirtualAddress();
 
-                // 綁定 Material Constant
                 int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < matToGlobalIdx.size()) ? sub.materialIndex : 0;
                 MaterialConstants* mc = reinterpret_cast<MaterialConstants*>(hitGroupData + 32 + 16);
                 mc->textureIndex = matToGlobalIdx.empty() ? 0xFFFFFFFF : matToGlobalIdx[matIdx];
@@ -208,7 +222,22 @@ void RayTracingPass::BuildSBT(ID3D12Device5* device, RenderPassContext& ctx) {
                 mc->baseColorFactor[3] = sub.baseColorFactor[3];
                 mc->_pad = 0;
 
-                hitGroupData += hitGroupStride;
+                hitGroupData += hitGroupStride; // 前進到下一個紀錄
+
+                // ==========================================
+                // 寫入第二個紀錄: Shadow Ray HitGroup
+                // ==========================================
+                LPCWSTR shadowHitGroup = needsAnyHit ? L"HitGroup_Shadow_Alpha" : L"HitGroup_Shadow_Opaque";
+                memcpy(hitGroupData, stateObjectProps->GetShaderIdentifier(shadowHitGroup), 32);
+
+                // 複製一模一樣的 Local Arguments 給陰影光線使用 (因為 ShadowAnyHit 也要讀貼圖)
+                D3D12_GPU_VIRTUAL_ADDRESS* localArgsShadow = (D3D12_GPU_VIRTUAL_ADDRESS*)(hitGroupData + 32);
+                localArgsShadow[0] = localArgs[0];
+                localArgsShadow[1] = localArgs[1];
+                MaterialConstants* mcShadow = reinterpret_cast<MaterialConstants*>(hitGroupData + 32 + 16);
+                memcpy(mcShadow, mc, sizeof(MaterialConstants));
+
+                hitGroupData += hitGroupStride; // 再次前進
             }
         }
     }
@@ -308,7 +337,7 @@ void RayTracingPass::BuildTLAS(ID3D12GraphicsCommandList4* cmdList4, RenderPassC
                 instanceDesc.InstanceID = (UINT)instances.size();
                 instanceDesc.InstanceMask = 0xFF;
                 // 利用全域數量確保 HitGroup 嚴格對齊
-                instanceDesc.InstanceContributionToHitGroupIndex = (UINT)instances.size();
+				instanceDesc.InstanceContributionToHitGroupIndex = (UINT)instances.size() * 2; // 每個 Instance 對應一個 HitGroup，且 HitGroup 間隔為 2 (Primary + Shadow)
                 instanceDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
                 instanceDesc.AccelerationStructure = mesh->blasBuffers[subIdx]->GetGPUVirtualAddress();
 
@@ -473,7 +502,7 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
 
     // 套用動態的 HitGroup 設定
     rayDesc.HitGroupTable.StartAddress = m_sbtBuffer->GetGPUVirtualAddress() + m_sbtHitGroupOffset;
-    rayDesc.HitGroupTable.SizeInBytes = m_instanceCount * m_sbtHitGroupStride;
+    rayDesc.HitGroupTable.SizeInBytes = m_instanceCount * m_sbtHitGroupStride * 2;
     rayDesc.HitGroupTable.StrideInBytes = m_sbtHitGroupStride;
 
     rayDesc.Width = ctx.gfx->GetWidth();

@@ -13,7 +13,8 @@ struct SubMesh {
 	UINT indexOffset = 0; // 在全局 Index Buffer 中的起始位置 (單位是 Index，不是 Byte)
 	UINT indexCount = 0;
     int  materialIndex = -1;
-    bool isTransparent = false;
+    bool isTransparent = false; // 用於玻璃、水滴 (Alpha Blend / Transmission)
+    bool isAlphaTested = false; // 用於樹葉、鐵絲網 (Alpha Mask)
 
     // KHR_materials_transmission
     float transmissionFactor = 0.0f;  // 0=不透明, 1=全穿透
