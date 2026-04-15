@@ -13,7 +13,9 @@ cbuffer CameraParams : register(b0, space0)
     float3 cameraPos;
     uint frameCount;
     float envIntegral; // 環境光の総エネルギー (PDF 計算用)
-    float3 _padCamera; // 16 bytes アライメントを補完
+    float jitterX;     // (予約) NDC オフセット
+    float jitterY;
+    float _padCamera;
 };
 
 struct Light
@@ -324,8 +326,9 @@ void RayGen()
         TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 2, 0, ray, payload);
 
         // ホタル抑制 (Firefly Clamping)
-        // 1 回の光線バウンスで持ち帰る最大エネルギーを制限し、HDRI の極めて明るい点が時間累積の履歴を破壊しないようにする
-        const float MAX_RADIANCE = 20.0f; // HDRI の輝度に応じてこの値を調整可能
+        // 20.0 → 6.0 に強化。HDRI の sun ピクセル直撃が denoiser 管線を汚染するのを防ぐ。
+        // 下流 (TemporalAccumulation) の上限と一致させ、中央値計算で生き残るホタルを根絶する。
+        const float MAX_RADIANCE = 6.0f;
 
         float lumaD = dot(payload.diffuse, float3(0.2126f, 0.7152f, 0.0722f));
         if (lumaD > MAX_RADIANCE) 

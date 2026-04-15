@@ -91,10 +91,10 @@ void SpatialDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPass
     ID3D12DescriptorHeap* heaps[] = { m_descriptorHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
 
-    // 4 パスの À-Trous ウェーブレットデノイズを実行
-    int numPasses = 4;
+    // 5 パスの À-Trous ウェーブレットデノイズを実行 (IBL 低周波ノイズ対応)
+    int numPasses = 5;
     for (int i = 0; i < numPasses; ++i) {
-        int stepSize = 1 << i; // 1, 2, 4, 8
+        int stepSize = 1 << i; // 1, 2, 4, 8, 16
         bool isLastPass = (i == numPasses - 1);
 
         // 最後の Pass の場合、書き込み先を m_finalOutput に向ける

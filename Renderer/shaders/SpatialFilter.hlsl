@@ -68,8 +68,8 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float4 sumSpecular = 0.0f;
     float sumWeightSpecular = 0.0f;
 
-    // À-Trous ウェーブレットカーネル 3x3 展開 (5x5 のほうが良いが、3x3 のほうが高性能)
-    const int radius = 1;
+    // À-Trous ウェーブレットカーネル 5x5 展開 (IBL ノイズ対応のため 3x3 から拡大)
+    const int radius = 2;
 
     for (int y = -radius; y <= radius; ++y)
     {
@@ -107,8 +107,11 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             // 4. Diffuse 動的輝度重み (SVGF の核心)
             // ==========================================
             float sampleLumaDiff = dot(sampleDiff.rgb, LUMINANCE_VECTOR);
-            // 差分 / (標準偏差 * 感度)。標準偏差が大きいほど指数が 0 に近づき、exp(0) = 1 (強制ブラー！)
-            float lumaWeightDiff = exp(-abs(centerLumaDiff - sampleLumaDiff) / (stdDevDiff * 4.0f + 0.001f));
+            // 暗部対応: 分母に「信号強度に比例する下限」を追加。
+            // 暗部 (center/sample luma が小さい) では σ も小さいので、絶対差分ベースの
+            // 重みだと鄰近を過度に拒絶してノイズが残る。相対スケールを導入して救済。
+            float lumaScale = max(centerLumaDiff, sampleLumaDiff) * 0.5f;
+            float lumaWeightDiff = exp(-abs(centerLumaDiff - sampleLumaDiff) / (stdDevDiff * 8.0f + lumaScale + 0.1f));
             
             float diffW = spatialWeight * normalWeight * posWeight * lumaWeightDiff;
             sumDiffuse += sampleDiff * diffW;
@@ -118,19 +121,15 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             // 5. Specular 重み (Roughness と Specular 分散に誘導される)
             // ==========================================
             float sampleLumaSpec = dot(sampleSpec.rgb, LUMINANCE_VECTOR);
-            float lumaWeightSpec = exp(-abs(centerLumaSpec - sampleLumaSpec) / (stdDevSpec * 4.0f + 0.001f));
-            
-            // 粗さが低いほど Specular は鏡面に近くなり、鮮明な反射を保つため空間拡散を小さくする必要がある
-            float roughnessWeight = exp(-(x * x + y * y) / max(centerRoughness * centerRoughness * 2.0f, 0.05f));
-            
-            // 追加の保護機構：
-            // 表面が非常に滑らか (Roughness < 0.1f) な場合、鏡のように振る舞うべき。
-            // この場合、中心点以外 (x!=0 または y!=0) の重み寄与を強制的に削弱し、周辺ピクセルがハイライト反射を汚染しないようにする。
-            if (centerRoughness < 0.1f && (x != 0 || y != 0))
-            {
-                roughnessWeight *= 0.05f; // 強力カットオフ
-            }
-            
+            float lumaScaleSpec = max(centerLumaSpec, sampleLumaSpec) * 0.5f;
+            float lumaWeightSpec = exp(-abs(centerLumaSpec - sampleLumaSpec) / (stdDevSpec * 8.0f + lumaScaleSpec + 0.1f));
+
+            // Specular カーネル: 純 roughness 基準で安定化。
+            // σ に依存させるとフレーム毎にカーネルが変化し、時間的なちらつき (跳動) を誘発。
+            // 鏡面/屈折の噪声は時間積分 (TemporalAccumulation) に委ねる。
+            float specKernelScale = max(centerRoughness * centerRoughness * 2.0f, 0.05f);
+            float roughnessWeight = exp(-(x * x + y * y) / specKernelScale);
+
             float specW = spatialWeight * normalWeight * posWeight * lumaWeightSpec * roughnessWeight;
             sumSpecular += sampleSpec * specW;
             sumWeightSpecular += specW;

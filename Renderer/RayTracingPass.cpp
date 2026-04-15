@@ -430,6 +430,9 @@ void RayTracingPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassConte
     m_mappedCameraCB->cameraPos = ctx.scene->GetCameraPos();
     m_mappedCameraCB->frameCount = ctx.frameCount;
     m_mappedCameraCB->envIntegral = (m_envMap != nullptr) ? m_envMap->envIntegral : 1.0f;
+    // ピクセル空間の jitter を NDC オフセットに変換 (透過ピクセルで打ち消すため)
+    m_mappedCameraCB->jitterX = ctx.jitterX * 2.0f / (float)ctx.gfx->GetWidth();
+    m_mappedCameraCB->jitterY = ctx.jitterY * 2.0f / (float)ctx.gfx->GetHeight();
 
     UINT srvDescSize = ctx.gfx->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     auto device = ctx.gfx->GetDevice();

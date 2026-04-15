@@ -49,7 +49,9 @@ private:
         DirectX::XMFLOAT3 cameraPos;
         UINT frameCount;
 		float envIntegral;// 環境光の総エネルギー
-        DirectX::XMFLOAT3 _pad;
+        float jitterX;    // NDC 空間の jitter オフセット (透過ピクセルで無効化するため)
+        float jitterY;
+        float _pad;
     };
     CameraParams* m_mappedCameraCB = nullptr;
 

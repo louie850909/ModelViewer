@@ -4,17 +4,18 @@
 void GeometryPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 geomSrvRange;
     geomSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
-    CD3DX12_ROOT_PARAMETER1 geomParams[3];
+    CD3DX12_ROOT_PARAMETER1 geomParams[4];
     geomParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: グローバルカメラ (2 DWORDs)
     geomParams[1].InitAsConstants(16, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);                                       // b1: Model Matrix (16 DWORDs)
     geomParams[2].InitAsDescriptorTable(1, &geomSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);                          // t0: Textures (1 DWORD)
+    geomParams[3].InitAsConstants(3, 2, 0, D3D12_SHADER_VISIBILITY_PIXEL);                                         // b2: MaterialFactors (roughness, metallic, isTransmission) (3 DWORDs)
 
     CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_ANISOTROPIC);
     sampler.MaxAnisotropy = 16;
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC geomRsDesc;
-    geomRsDesc.Init_1_1(3, geomParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    geomRsDesc.Init_1_1(4, geomParams, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
     ComPtr<ID3DBlob> sigBlob, errBlob;
     D3DX12SerializeVersionedRootSignature(&geomRsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
     device->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&m_rootSig));
@@ -116,6 +117,16 @@ void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext
                 int matIdx = (sub.materialIndex >= 0 && sub.materialIndex < (int)mesh->texturePaths.size()) ? sub.materialIndex : 0;
                 CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(inst.srvHeap->GetGPUDescriptorHandleForHeapStart(), matIdx * 3, srvDescSize);
                 cmdList->SetGraphicsRootDescriptorTable(2, srvHandle);
+
+                // 材質係数を PS の b2 に push: roughnessFactor, metallicFactor, isTransmission flag
+                // 透明材質は denoiser でタイトな specular カーネルを使うため roughness=0.05 を強制
+                float matFactors[3] = {
+                    sub.roughnessFactor,
+                    sub.metallicFactor,
+                    sub.isTransparent ? 1.0f : 0.0f
+                };
+                cmdList->SetGraphicsRoot32BitConstants(3, 3, matFactors, 0);
+
                 cmdList->DrawIndexedInstanced(sub.indexCount, 1, sub.indexOffset, 0, 0);
                 ctx.currentDrawCalls++;
             }

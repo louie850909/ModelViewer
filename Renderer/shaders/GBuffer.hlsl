@@ -10,6 +10,13 @@ cbuffer ObjectConstants : register(b1)
     matrix modelMatrix;
 };
 
+cbuffer MaterialFactors : register(b2)
+{
+    float roughnessFactor;
+    float metallicFactor;
+    float isTransmission;
+};
+
 struct VSInput
 {
     float3 pos : POSITION;
@@ -117,9 +124,18 @@ PSOutput PSMain(VSOutput input)
     float3x3 tbn = float3x3(worldTangent, worldBitangent, worldNormal);
     float3 finalNormal = normalize(mul(localNormalMap, tbn));
     
+    // 透過材質 (ガラス等) は denoiser の specular カーネルをタイトに保つため、
+    // GBuffer の roughness を強制的に 0.02 に設定する。
+    // これにより鏡面/屈折のサンプルが広域ブラーされず細部が保持される。
+    float finalRoughness = saturate(mr.g * roughnessFactor);
+    if (isTransmission > 0.5f)
+        finalRoughness = 0.02f;
+
+    float finalMetallic = saturate(mr.b * metallicFactor);
+
     output.Albedo = float4(albedo.rgba);
-    output.NormalRoughness = float4(finalNormal, mr.g);
-    output.WorldPosMetallic = float4(input.worldPos, mr.b);
+    output.NormalRoughness = float4(finalNormal, finalRoughness);
+    output.WorldPosMetallic = float4(input.worldPos, finalMetallic);
     
     // スクリーン空間のモーションベクトル (Velocity) を計算
     float2 ndc = input.clipPos.xy / input.clipPos.w;
