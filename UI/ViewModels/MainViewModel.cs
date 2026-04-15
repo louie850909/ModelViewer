@@ -5,7 +5,7 @@ using UI.Services;
 namespace UI.ViewModels;
 
 /// <summary>
-/// 聚合所有 ViewModel，是 MainWindow 唯一持有的頂層物件。
+/// すべての ViewModel を集約し、MainWindow が唯一保持するトップレベルオブジェクト。
 /// </summary>
 internal sealed class MainViewModel : IDisposable
 {
@@ -34,39 +34,39 @@ internal sealed class MainViewModel : IDisposable
     }
 
     /// <summary>
-    /// 每幀由 GameLoop 呼叫：
-    /// 1. 推送相機狀態
-    /// 2. 收集所有 dirty node Transform，單次 P/Invoke 刷入 C++
-    /// 3. 更新效能統計
+    /// GameLoop から毎フレーム呼ばれる：
+    /// 1. カメラ状態をプッシュ
+    /// 2. すべての dirty な Node Transform を収集し、単一の P/Invoke で C++ に反映
+    /// 3. パフォーマンス統計を更新
     /// </summary>
     public void Tick()
     {
-        // 1. 相機
+        // 1. カメラ
         var c = Camera;
         Renderer.SetCamera(c.Position.X, c.Position.Y, c.Position.Z, c.Pitch, c.Yaw);
 
-        // 2. 收集 dirty 并批次刷入
+        // 2. dirty を収集してバッチで反映
         if (Transform.IsDirty)
         {
             _dirtyEntries.Clear();
 
-            // 遍走場景內所有節點（所有 mesh 的全域 globalIndex）
-            // Hierarchy.RootNodes 已含所有 mesh 的根節點，遞迴收集全樹
+            // シーン内のすべてのノードを走査（全 mesh のグローバル globalIndex）
+            // Hierarchy.RootNodes はすべての mesh のルートノードを含み、ツリー全体を再帰的に収集
             CollectAllNodeEntries(Hierarchy.RootNodes);
 
             Renderer.FlushNodeTransforms(_batcher, _dirtyEntries);
             Transform.ClearDirty();
         }
 
-        // 3. 效能統計
+        // 3. パフォーマンス統計
         var (v, p, dc, ft) = Renderer.GetStats();
         Stats.Update(v, p, dc, ft);
     }
 
     /// <summary>
-    /// 遞迴收集全樹的 NodeEntry：
-    /// - 選取節點用 VM 最新值（Transform.BuildEntry）
-    /// - 其餘節點直接從 C++ 讀回現有值（GetNodeTransform）
+    /// ツリー全体の NodeEntry を再帰的に収集する：
+    /// - 選択中のノードは VM の最新値を使用（Transform.BuildEntry）
+    /// - その他のノードは C++ から既存の値を直接読み取る（GetNodeTransform）
     /// </summary>
     private void CollectAllNodeEntries(
         System.Collections.ObjectModel.ObservableCollection<NodeItem> nodes)

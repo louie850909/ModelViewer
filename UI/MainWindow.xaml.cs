@@ -41,7 +41,7 @@ public sealed partial class MainWindow : Window
         StatsText.Text = _vm.Stats.DisplayText;
     }
 
-    // ── Renderer 生命週期 ─────────────────────────────────
+    // ── Renderer ライフサイクル ───────────────────────────
     private void RenderPanel_Loaded(object sender, RoutedEventArgs e)
     {
         double scale = RenderPanel.XamlRoot.RasterizationScale;
@@ -55,20 +55,20 @@ public sealed partial class MainWindow : Window
             _vm.Renderer.Resize(RenderPanel.ActualWidth, RenderPanel.ActualHeight, scale);
             _cameraInput = new CameraInputHandler(RenderPanel, _vm.Camera, GetSelectedNodeWorldPosition);
 
-            // 啟動時預設加入一個 Directional Light
+            // 起動時にデフォルトで Directional Light を 1 つ追加
             AddLight(0);
 
-            // 解析絕對路徑 (BaseDirectory 結尾通常帶有斜線，Path.Combine 會自動處理)
+            // 絶対パスを解決 (BaseDirectory の末尾は通常スラッシュ付きで、Path.Combine が自動処理)
             string hdrPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "env.hdr");
 
-            // 檢查檔案是否存在（安全防呆）
+            // ファイルの存在を確認（安全フェイルセーフ）
             if (File.Exists(hdrPath))
             {
                 _vm.Renderer.LoadEnvironmentMap(hdrPath);
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"[警告] 找不到環境貼圖: {hdrPath}");
+                System.Diagnostics.Debug.WriteLine($"[警告] 環境マップが見つかりません: {hdrPath}");
             }
         }
     }
@@ -90,7 +90,7 @@ public sealed partial class MainWindow : Window
     private void RenderPanel_Unloaded(object sender, RoutedEventArgs e)
         => _vm.Renderer.Shutdown();
 
-    // ── 模型載入 ───────────────────────────────────────
+    // ── モデルの読み込み ─────────────────────────────────
     private async void OpenModel_Click(object sender, RoutedEventArgs e)
     {
         if (!_vm.Renderer.IsInitialized) return;
@@ -152,7 +152,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // ── Ray Tracing 切換 ─────────────────────────────────────
+    // ── Ray Tracing 切り替え ─────────────────────────────────
     private void RayTracingToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_vm.Renderer.IsInitialized)
@@ -161,7 +161,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // ── Hierarchy 選取 ─────────────────────────────────────
+    // ── Hierarchy 選択 ───────────────────────────────────────
     private void HierarchyTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {
         if (args.InvokedItem is TreeViewNode treeNode &&
@@ -188,7 +188,7 @@ public sealed partial class MainWindow : Window
         ScaleYText.Text = _vm.Transform.SY.ToString("F3");
         ScaleZText.Text = _vm.Transform.SZ.ToString("F3");
 
-        // 屬性面板同步：若為光源節點，顯示光源屬性面板並填入數值
+        // プロパティパネル同期：光源ノードの場合、光源プロパティパネルを表示して値を入力
         LightSettingsPanel.Visibility = node.IsLight ? Visibility.Visible : Visibility.Collapsed;
         if (node.IsLight)
         {
@@ -201,7 +201,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // ── 右鍵選單 ───────────────────────────────────────
+    // ── 右クリックメニュー ────────────────────────────────
 
     private void HierarchyTree_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
@@ -214,18 +214,18 @@ public sealed partial class MainWindow : Window
             hit = VisualTreeHelper.GetParent(hit);
         }
 
-        // 如果點在空白處 (tvi 為 null)，顯示新增光源選單
+        // 空白部分をクリックした場合 (tvi が null)、光源追加メニューを表示
         if (tvi == null)
         {
             var addLightFlyout = new MenuFlyout();
 
-            var addDirLight = new MenuFlyoutItem { Text = "新增 Directional Light" };
+            var addDirLight = new MenuFlyoutItem { Text = "Directional Light を追加" };
             addDirLight.Click += (_, _) => AddLight(0);
 
-            var addPointLight = new MenuFlyoutItem { Text = "新增 Point Light" };
+            var addPointLight = new MenuFlyoutItem { Text = "Point Light を追加" };
             addPointLight.Click += (_, _) => AddLight(1);
 
-            var addSpotLight = new MenuFlyoutItem { Text = "新增 Spot Light" };
+            var addSpotLight = new MenuFlyoutItem { Text = "Spot Light を追加" };
             addSpotLight.Click += (_, _) => AddLight(2);
 
             addLightFlyout.Items.Add(addDirLight);
@@ -237,20 +237,20 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // 2. 透過 TreeViewItem 反查 TreeViewNode
+        // 2. TreeViewItem から TreeViewNode を逆引き
         var treeNode = HierarchyTree.NodeFromContainer(tvi);
         if (treeNode == null) return;
         if (!_nodeMap.TryGetValue(treeNode, out var nodeItem)) return;
 
-        // 3. 選取該節點
+        // 3. そのノードを選択
         _vm.Hierarchy.SelectedNode = nodeItem;
 
-        // 4. 建立節點特定選單
+        // 4. ノード固有のメニューを作成
         var flyout = new MenuFlyout();
 
         if (nodeItem.IsLight)
         {
-            var deleteLightItem = new MenuFlyoutItem { Text = "刪除光源" };
+            var deleteLightItem = new MenuFlyoutItem { Text = "光源を削除" };
             deleteLightItem.Click += (_, _) => DeleteLight(nodeItem);
             flyout.Items.Add(deleteLightItem);
         }
@@ -260,7 +260,7 @@ public sealed partial class MainWindow : Window
             {
                 flyout.Items.Add(new MenuFlyoutItem
                 {
-                    Text = $"模型：{GetModelRootName(nodeItem.MeshId)}",
+                    Text = $"モデル：{GetModelRootName(nodeItem.MeshId)}",
                     IsEnabled = false,
                 });
                 flyout.Items.Add(new MenuFlyoutSeparator());
@@ -268,7 +268,7 @@ public sealed partial class MainWindow : Window
 
             var deleteItem = new MenuFlyoutItem
             {
-                Text = nodeItem.ParentIndex == -1 ? "切除模型" : "切除整個模型",
+                Text = nodeItem.ParentIndex == -1 ? "モデルを削除" : "モデル全体を削除",
             };
             deleteItem.Click += (_, _) => DeleteModel(nodeItem.MeshId);
             flyout.Items.Add(deleteItem);
@@ -309,7 +309,7 @@ public sealed partial class MainWindow : Window
             RemoveFromNodeMap(child);
     }
 
-    // ── 光源特定邏輯 ─────────────────────────────────────
+    // ── 光源固有ロジック ──────────────────────────────────
 
     private void AddLight(int type)
     {
@@ -373,7 +373,7 @@ public sealed partial class MainWindow : Window
             ScaleXText.Text, ScaleYText.Text, ScaleZText.Text);
     }
 
-    // ── 工具 ─────────────────────────────────────────────
+    // ── ユーティリティ ──────────────────────────────────────
     private IEnumerable<NodeItem> GetNodesForMesh(int meshId)
         => _nodeMap.Values.Where(n => n.MeshId == meshId);
 }

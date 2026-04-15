@@ -1,7 +1,7 @@
 namespace UI.ViewModels;
 
 /// <summary>
-/// 每幀效能數據。由 MainViewModel.Tick() 更新。
+/// フレームごとのパフォーマンスデータ。MainViewModel.Tick() によって更新される。
 /// </summary>
 internal sealed class StatsViewModel : ObservableObject
 {
@@ -15,7 +15,7 @@ internal sealed class StatsViewModel : ObservableObject
     public int   Polygons    { get => _polygons;    private set => SetProperty(ref _polygons,    value); }
     public int   DrawCalls   { get => _drawCalls;   private set => SetProperty(ref _drawCalls,   value); }
 
-    /// <summary>格式化後的多行顯示字串，供 TextBlock 直接綁定。</summary>
+    /// <summary>フォーマット済みの複数行表示文字列。TextBlock に直接バインドするために使用。</summary>
     public string DisplayText =>
         $"Frame Time : {FrameTimeMs:F2} ms\n" +
         $"Vertices   : {Vertices:N0}\n" +

@@ -5,8 +5,8 @@ using System.Runtime.InteropServices;
 namespace UI;
 
 /// <summary>
-/// 每個 Node 的 TRS 資料封包。
-/// Rotation 使用 quaternion (x, y, z, w)，與 C++ SceneNode 完全對應。
+/// 各ノードの TRS データパケット。
+/// Rotation はクォータニオン (x, y, z, w) を使用し、C++ SceneNode と完全に対応する。
 /// </summary>
 internal readonly struct NodeEntry
 {
@@ -28,7 +28,7 @@ internal readonly struct NodeEntry
     }
 
     /// <summary>
-    /// 從 RendererService.GetNodeTransform() 回傳的 (t, r, s) 陣列建立。
+    /// RendererService.GetNodeTransform() が返す (t, r, s) 配列から生成する。
     /// </summary>
     public static NodeEntry FromArrays(int globalIndex, float[] t, float[] r, float[] s)
         => new(globalIndex,
@@ -38,16 +38,16 @@ internal readonly struct NodeEntry
 }
 
 /// <summary>
-/// 將所有 Node 的 TRS 資料打包成單一 pinned float[]，
-/// 透過一次 P/Invoke (Renderer_SetAllNodeTransforms) 傳遞給 C++。
+/// すべてのノードの TRS データを単一の pinned float[] に詰め込み、
+/// 一度の P/Invoke (Renderer_SetAllNodeTransforms) で C++ に渡す。
 ///
-/// 格式：每個 Node 佔 11 個 float
-///   [0]    GlobalIndex  (as float cast)
+/// フォーマット：各ノードは 11 個の float を占める
+///   [0]    GlobalIndex  (float キャスト)
 ///   [1..3] Translation  (x, y, z)
 ///   [4..7] Rotation     (x, y, z, w)  — quaternion
 ///   [8..10] Scale       (x, y, z)
 ///
-/// 生命週期：隨 MainViewModel 建立並 Dispose。
+/// ライフサイクル：MainViewModel と共に生成され、Dispose される。
 /// </summary>
 internal sealed class NodeTransformBatcher : IDisposable
 {
@@ -59,7 +59,7 @@ internal sealed class NodeTransformBatcher : IDisposable
     private bool     _disposed = false;
 
     /// <summary>
-    /// 將 entries 列表的 TRS 寫入 pinned buffer，並以單次 P/Invoke 刷入 C++。
+    /// entries リストの TRS を pinned buffer に書き込み、単一の P/Invoke で C++ に反映する。
     /// </summary>
     public void FlushToCpp(IList<NodeEntry> entries)
     {

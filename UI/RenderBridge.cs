@@ -16,46 +16,46 @@ internal static class RenderBridge
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Renderer_Shutdown();
 
-    // 相機
+    // カメラ
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Renderer_SetCameraTransform(float px, float py, float pz, float pitch, float yaw);
 
-    // 統計
+    // 統計情報
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Renderer_GetStats(out int vertices, out int polygons, out int drawCalls, out float frameTimeMs);
 
-    // ── 模型載入 / 移除 ──────────────────────────────────────────────
+    // ── モデルの読み込み / 削除 ─────────────────────────────────────
 
-    /// callback 簽名：(int meshId)
+    /// callback シグネチャ：(int meshId)
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void AddModelCallback(int meshId);
 
-    /// 新增模型到場景，立即回傳 meshId。
+    /// モデルをシーンに追加し、meshId を即座に返す。
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern int Renderer_AddModel([MarshalAs(UnmanagedType.LPStr)] string path, AddModelCallback callback);
 
-    /// 從場景移除指定 meshId。
+    /// 指定した meshId をシーンから削除する。
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Renderer_RemoveModel(int meshId);
 
-    /// 舊相容 API（載入模型，舊呢叫用）
+    /// 旧互換 API（モデルの読み込み、旧呼び出し用）
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void LoadCallback();
 
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern bool Renderer_LoadModel([MarshalAs(UnmanagedType.LPStr)] string path, LoadCallback callback);
 
-    /// 載入環境貼圖，提供給 shader 使用。
+    /// 環境マップを読み込み、シェーダーに提供する。
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     public static extern void Renderer_LoadEnvironmentMap(string path);
 
     // ── Node API (globalIndex = meshId * MESH_NODE_STRIDE + localIndex) ──
 
-    /// 場景內所有 mesh 的 node 總數。
+    /// シーン内のすべての mesh のノード総数。
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern int Renderer_GetTotalNodeCount();
 
-    /// 舊相容：取第一個 mesh 的 node 數。
+    /// 旧互換：最初の mesh のノード数を取得する。
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern int Renderer_GetNodeCount();
 
@@ -78,13 +78,13 @@ internal static class RenderBridge
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern bool Renderer_SetLight(int id, int type, float intensity, float coneAngle, float[] color, float[] pos, float[] dir);
 
-    // ── 渲染設定 ──────────────────────────────────────────────
+    // ── レンダリング設定 ──────────────────────────────────────
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Renderer_SetRayTracingEnabled(bool enable);
 
     /// <summary>
-    /// 批次更新所有 Node Transform。
-    /// 每個 entry 檔式：[globalIndex(float), tx, ty, tz, rx, ry, rz, rw, sx, sy, sz] = 11 floats
+    /// すべての Node Transform をバッチ更新する。
+    /// 各 entry のフォーマット：[globalIndex(float), tx, ty, tz, rx, ry, rz, rw, sx, sy, sz] = 11 floats
     /// </summary>
     [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Renderer_SetAllNodeTransforms(IntPtr data, int nodeCount);

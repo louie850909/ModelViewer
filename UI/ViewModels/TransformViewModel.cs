@@ -5,12 +5,12 @@ using UI.Services;
 namespace UI.ViewModels;
 
 /// <summary>
-/// 負責選取節點的 TRS 資料顯示與回寫，以及 Euler ↔ Quaternion 轉換。
+/// 選択ノードの TRS データの表示と書き戻し、および Euler ↔ Quaternion 変換を担当する。
 /// </summary>
 internal sealed class TransformViewModel : ObservableObject
 {
     private readonly RendererService _renderer;
-    private int _nodeIndex = -1;   // 儲存 globalIndex
+    private int _nodeIndex = -1;   // globalIndex を保持
 
     public TransformViewModel(RendererService renderer)
         => _renderer = renderer;
@@ -21,7 +21,7 @@ internal sealed class TransformViewModel : ObservableObject
     public float PY { get => _py; set => SetProperty(ref _py, value); }
     public float PZ { get => _pz; set => SetProperty(ref _pz, value); }
 
-    // ── Rotation (Euler 度數) ───────────────────────
+    // ── Rotation (Euler 角度) ───────────────────────
     private float _rx, _ry, _rz;
     public float RX { get => _rx; set => SetProperty(ref _rx, value); }
     public float RY { get => _ry; set => SetProperty(ref _ry, value); }
@@ -49,15 +49,15 @@ internal sealed class TransformViewModel : ObservableObject
     /// <summary>GlobalIndex = meshId * MeshNodeStride + localIndex。</summary>
     public int NodeIndex => _nodeIndex;
 
-    /// <summary>dirty flag：Apply / TryApplyFromStrings 第一個呼叫時設為 true。</summary>
+    /// <summary>dirty フラグ：Apply / TryApplyFromStrings の最初の呼び出し時に true に設定される。</summary>
     public bool IsDirty { get; private set; } = false;
 
-    /// <summary>儱除 dirty flag，由 MainViewModel.Tick() 在刷入完成後呼叫。</summary>
+    /// <summary>dirty フラグをクリアする。フラッシュ完了後に MainViewModel.Tick() から呼ばれる。</summary>
     public void ClearDirty() => IsDirty = false;
 
     private NodeItem? _currentNode;
 
-    // ── 公開操作 ─────────────────────────────────
+    // ── 公開操作メソッド ─────────────────────────────
 
     public void LoadNode(NodeItem? node)
     {
@@ -69,7 +69,7 @@ internal sealed class TransformViewModel : ObservableObject
         {
             var (t, i, c, col, p, d) = _renderer.GetLight(node.LightId);
             PX = p[0]; PY = p[1]; PZ = p[2];
-            // Direction 轉 Euler
+            // Direction を Euler に変換
             Vector3 dir = Vector3.Normalize(new Vector3(d[0], d[1], d[2]));
             RX = (float)(Math.Asin(-dir.Y) * 180 / Math.PI);
             RY = (float)(Math.Atan2(dir.X, dir.Z) * 180 / Math.PI);
@@ -82,7 +82,7 @@ internal sealed class TransformViewModel : ObservableObject
         {
             if (node == null) { _nodeIndex = -1; NodeName = string.Empty; return; }
 
-            _nodeIndex = node.GlobalIndex; // 使用 globalIndex
+            _nodeIndex = node.GlobalIndex; // globalIndex を使用
             NodeName = node.Name;
 
             var (t, r, s) = _renderer.GetNodeTransform(_nodeIndex);
@@ -147,7 +147,7 @@ internal sealed class TransformViewModel : ObservableObject
         return true;
     }
 
-    // ── 轉換工具 ─────────────────────────────────
+    // ── 変換ユーティリティ ───────────────────────────
 
     private static Vector3 QuatToEulerDeg(Quaternion q)
     {

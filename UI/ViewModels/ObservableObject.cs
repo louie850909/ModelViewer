@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 namespace UI.ViewModels;
 
 /// <summary>
-/// INotifyPropertyChanged 基底類別，所有 ViewModel 繼承此類。
+/// INotifyPropertyChanged 基底クラス。すべての ViewModel はこのクラスを継承する。
 /// </summary>
 internal abstract class ObservableObject : INotifyPropertyChanged
 {

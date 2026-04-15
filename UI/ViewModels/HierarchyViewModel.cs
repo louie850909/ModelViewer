@@ -7,16 +7,16 @@ using UI.Services;
 namespace UI.ViewModels;
 
 /// <summary>
-/// 場景內一個 Node 的資料節點。
+/// シーン内の 1 つのノードのデータ。
 /// GlobalIndex = MeshId * MeshNodeStride + LocalIndex
 /// </summary>
 internal sealed class NodeItem
 {
     public string Name        { get; init; } = string.Empty;
-    public int    MeshId      { get; init; }  // 所屬模型
+    public int    MeshId      { get; init; }  // 所属モデル
     public int    GlobalIndex { get; init; }  // = MeshId * STRIDE + localIndex
-    public int    CppIndex    { get; init; }  // 舊相容，等於 GlobalIndex
-    public int    ParentIndex { get; init; }  // parent GlobalIndex，-1 為根
+    public int    CppIndex    { get; init; }  // 旧互換、GlobalIndex と等しい
+    public int    ParentIndex { get; init; }  // 親の GlobalIndex、-1 はルート
     public ObservableCollection<NodeItem> Children { get; } = new();
     public bool IsLight { get; init; } = false;
     public int LightId { get; init; } = -1;
@@ -24,7 +24,7 @@ internal sealed class NodeItem
 }
 
 /// <summary>
-/// 管理 Hierarchy 面板的節點樹狀結構與選取狀態。
+/// Hierarchy パネルのノードツリー構造と選択状態を管理する。
 /// </summary>
 internal sealed class HierarchyViewModel : ObservableObject
 {
@@ -45,22 +45,22 @@ internal sealed class HierarchyViewModel : ObservableObject
 
     public event Action<NodeItem?>? OnNodeSelected;
 
-    // ── 建立 / 進行 ──────────────────────────────────────
+    // ── 構築 / 実行 ──────────────────────────────────────
 
-    /// <summary>建立建立場景内所有 mesh 的完整 Hierarchy。</summary>
+    /// <summary>シーン内のすべての mesh の完全な Hierarchy を構築する。</summary>
     public void Rebuild(RendererService renderer)
     {
         RootNodes.Clear();
-        // 目前將在 AddMeshNodes 逐次追加，此處留空備用
+        // 現在は AddMeshNodes で逐次追加するため、ここは空のまま予備として残す
     }
 
     /// <summary>
-    /// 將一個模型的所有 node 追加到 Hierarchy。
-    /// localNodeCount 為該 mesh 的 node 總數。
+    /// 1 つのモデルのすべてのノードを Hierarchy に追加する。
+    /// localNodeCount はその mesh のノード総数。
     /// </summary>
     public void AddMeshNodes(RendererService renderer, int meshId, int localNodeCount)
     {
-        // globalIndex 對應表：用於從樹狀結構中快速查找
+        // globalIndex 対応表：ツリー構造から高速検索するために使用
         var indexMap = new Dictionary<int, NodeItem>(); // globalIndex → NodeItem
 
         for (int local = 0; local < localNodeCount; local++)
@@ -73,7 +73,7 @@ internal sealed class HierarchyViewModel : ObservableObject
                 Name        = name,
                 MeshId      = meshId,
                 GlobalIndex = globalIndex,
-                CppIndex    = globalIndex, // 舊相容
+                CppIndex    = globalIndex, // 旧互換
                 ParentIndex = parentGlobal,
             };
             indexMap[globalIndex] = item;
@@ -85,12 +85,12 @@ internal sealed class HierarchyViewModel : ObservableObject
         }
     }
 
-    /// <summary>移除指定 meshId 的所有 NodeItem。</summary>
+    /// <summary>指定した meshId のすべての NodeItem を削除する。</summary>
     public void RemoveMeshNodes(int meshId)
     {
         var toRemove = RootNodes.Where(n => n.MeshId == meshId).ToList();
         foreach (var n in toRemove) RootNodes.Remove(n);
-        // 局部子節點隨父節點一同被移除。
-        // 若子節點從屬於不同 mesh，則不會發生（模型封閉內部）。
+        // 子ノードは親ノードと一緒に削除される。
+        // 子ノードが異なる mesh に属する場合は発生しない（モデルは内部で閉じている）。
     }
 }

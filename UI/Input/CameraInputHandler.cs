@@ -8,8 +8,8 @@ using UI.ViewModels;
 namespace UI.Input;
 
 /// <summary>
-/// 將 SwapChainPanel 的滑鼠/鍵盤事件轉換成 CameraViewModel 的操作指令。
-/// MainWindow 只需建立此 Handler 並傳入 Panel 即可，不含任何相機數學。
+/// SwapChainPanel のマウス/キーボードイベントを CameraViewModel の操作命令に変換する。
+/// MainWindow はこの Handler を生成して Panel を渡すだけでよく、カメラの数学は含まない。
 /// </summary>
 internal sealed class CameraInputHandler
 {
@@ -17,15 +17,15 @@ internal sealed class CameraInputHandler
     private readonly SwapChainPanel     _panel;
 
     /// <summary>
-    /// 取得目前選取節點的世界座標。
-    /// 由外部提供 (MainViewModel 注入)，讓 Handler 不需要知道 ViewModel 內部細節。
-    /// 回傳 null 代表目前沒有選取節點。
+    /// 現在選択中のノードのワールド座標を取得する。
+    /// 外部から提供される (MainViewModel が注入)。Handler が ViewModel の内部詳細を知る必要がない。
+    /// null を返す場合は現在選択中のノードがないことを意味する。
     /// </summary>
     private readonly Func<Vector3?> _getSelectedNodePosition;
 
     private bool _isOrbiting   = false;
     private bool _isFPSLooking = false;
-    private bool _wasFKeyDown  = false; // 違緣偵測，避免每幀重複觸發
+    private bool _wasFKeyDown  = false; // エッジ検出：毎フレームの連続トリガーを防ぐ
     private Windows.Foundation.Point _lastPos;
 
     public CameraInputHandler(
@@ -44,11 +44,11 @@ internal sealed class CameraInputHandler
     }
 
     /// <summary>
-    /// 每幀由 GameLoop 呼叫，處理 WASD 持續移動與 F 鍵對焦。
+    /// GameLoop から毎フレーム呼ばれる。WASD の継続移動と F キーフォーカスを処理する。
     /// </summary>
     public void TickMovement()
     {
-        // ─ WASD 移動 ─────────────────────────────────
+        // ─ WASD 移動 ─────────────────────────────────────
         if (_isFPSLooking)
         {
             float speed = _camera.MoveSpeed;
@@ -64,7 +64,7 @@ internal sealed class CameraInputHandler
             _camera.ApplyMove(dR, dU, dF);
         }
 
-        // ─ F 鍵對焦 (遷跃偵測，按一次只觸發一次) ───────────
+        // ─ F キーフォーカス (エッジ検出、1 回押すと 1 度だけトリガー) ─
         bool isFKeyDown = IsKeyDown(VirtualKey.F);
         if (isFKeyDown && !_wasFKeyDown)
         {
@@ -75,7 +75,7 @@ internal sealed class CameraInputHandler
         _wasFKeyDown = isFKeyDown;
     }
 
-    // ── 事件處理 ─────────────────────────────────────────
+    // ── イベント処理 ─────────────────────────────────────
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {

@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace UI.Services;
 
 /// <summary>
-/// 封裝對 Renderer.dll 的所有 P/Invoke 呼叫與生命週期管理。
+/// Renderer.dll へのすべての P/Invoke 呼び出しとライフサイクル管理をカプセル化する。
 /// </summary>
 internal sealed class RendererService : IDisposable
 {
@@ -20,7 +20,7 @@ internal sealed class RendererService : IDisposable
 
     public bool IsInitialized => _initialized;
 
-    // ── 生命週期 ───────────────────────────────────
+    // ── ライフサイクル ─────────────────────────────
 
     public bool Init(SwapChainPanel panel, int width, int height)
     {
@@ -50,13 +50,13 @@ internal sealed class RendererService : IDisposable
 
     public void Dispose() => Shutdown();
 
-    // ── 相機 ─────────────────────────────────────────
+    // ── カメラ ───────────────────────────────────────
     public void SetCamera(float px, float py, float pz, float pitch, float yaw)
     {
         if (_initialized) RenderBridge.Renderer_SetCameraTransform(px, py, pz, pitch, yaw);
     }
 
-    // ── 統計 ─────────────────────────────────────────
+    // ── 統計情報 ──────────────────────────────────────
     public (int vertices, int polygons, int drawCalls, float frameTimeMs) GetStats()
     {
         if (!_initialized) return (0, 0, 0, 0f);
@@ -64,7 +64,7 @@ internal sealed class RendererService : IDisposable
         return (v, p, dc, ft);
     }
 
-    // ── 模型載入 / 移除 ────────────────────────────────
+    // ── モデルの読み込み / 削除 ────────────────────────
 
     public Task<int> AddModelAsync(string path)
     {
@@ -79,7 +79,7 @@ internal sealed class RendererService : IDisposable
         if (_initialized) RenderBridge.Renderer_RemoveModel(meshId);
     }
 
-    //  ─ 環境貼圖載入 ────────────────────────────────
+    //  ─ 環境マップの読み込み ─────────────────────────
     public void LoadEnvironmentMap(string path)
     {
         if (_initialized)
@@ -127,7 +127,7 @@ internal sealed class RendererService : IDisposable
     public int GetNodeCount() =>
         _initialized ? RenderBridge.Renderer_GetNodeCount() : 0;
 
-    // ── 光源管理系統 (Light System) ───────────────────────────────────
+    // ── 光源管理システム (Light System) ──────────────────────────────
 
     public int AddLight(int type)
     {
@@ -151,7 +151,7 @@ internal sealed class RendererService : IDisposable
             return (type, intensity, coneAngle, color, pos, dir);
         }
 
-        // 若找不到光源或尚未初始化，回傳預設安全值
+        // 光源が見つからないか未初期化の場合、デフォルトの安全値を返す
         return (0, 1.0f, 30.0f, new float[] { 1f, 1f, 1f }, new float[] { 0f, 5f, 0f }, new float[] { 0f, -1f, 0f });
     }
 
@@ -161,7 +161,7 @@ internal sealed class RendererService : IDisposable
         return RenderBridge.Renderer_SetLight(id, type, intensity, coneAngle, color, pos, dir);
     }
 
-    // ── 渲染設定 ──────────────────────────────────────────────
+    // ── レンダリング設定 ──────────────────────────────────────
     public void SetRayTracingEnabled(bool enable)
     {
         if (_initialized)

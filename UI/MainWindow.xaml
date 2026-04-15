@@ -36,7 +36,7 @@
                 <TextBlock x:Name="StatsText" Foreground="#FF00FF00" FontSize="13" Margin="0,4,0,0" FontFamily="Consolas" />
             </StackPanel>
 
-            <Button Content="開啟模型" Click="OpenModel_Click"
+            <Button Content="モデルを開く" Click="OpenModel_Click"
                     VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16" />
 
             <Border x:Name="LoadingOverlay" Background="#A0000000" Visibility="Collapsed"
@@ -53,12 +53,12 @@
             <StackPanel Margin="12">
                 <ToggleSwitch x:Name="RayTracingToggle" 
                   Header="Ray Tracing (DXR)" 
-                  OffContent="關閉" OnContent="開啟" 
+                  OffContent="オフ" OnContent="オン"
                   Toggled="RayTracingToggle_Toggled" 
                   Margin="0,0,0,16"/>
                 <TextBlock Text="Inspector" Foreground="#CCCCCC" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                <TextBlock Text="節點名稱" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <TextBlock Text="ノード名" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
                 <TextBox x:Name="NodeNameText" IsReadOnly="True" Background="#2D2D2D" Foreground="White" BorderThickness="0" Margin="0,0,0,16"/>
 
                 <TextBlock Text="Position (座標)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
@@ -78,7 +78,7 @@
                     <TextBox x:Name="PosZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
 
-                <TextBlock Text="Rotation (Euler 度數)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <TextBlock Text="Rotation (Euler 角度)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
                 <Grid Margin="0,0,0,4">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>
@@ -95,7 +95,7 @@
                     <TextBox x:Name="RotZText" Grid.Column="1" LostFocus="TransformInput_LostFocus" KeyDown="TransformInput_KeyDown"/>
                 </Grid>
 
-                <TextBlock Text="Scale (縮放)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
+                <TextBlock Text="Scale (拡縮)" Foreground="#888888" FontSize="12" Margin="0,0,0,4"/>
                 <Grid Margin="0,0,0,4">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <TextBlock Text="X:" VerticalAlignment="Center" Foreground="#888888"/>

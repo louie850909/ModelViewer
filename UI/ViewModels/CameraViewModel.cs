@@ -4,9 +4,9 @@ using System.Numerics;
 namespace UI.ViewModels;
 
 /// <summary>
-/// 相機狀態 (Source of Truth)。
-/// 持有 Yaw/Pitch/Position/OrbitRadius，並提供 Orbit、FPS Look、Zoom、WASD、Focus 方法。
-/// 不直接接觸任何 WinUI / P/Invoke API。
+/// カメラ状態 (Source of Truth)。
+/// Yaw/Pitch/Position/OrbitRadius を保持し、Orbit・FPS Look・Zoom・WASD・Focus メソッドを提供する。
+/// WinUI / P/Invoke API には直接触れない。
 /// </summary>
 internal sealed class CameraViewModel : ObservableObject
 {
@@ -21,9 +21,9 @@ internal sealed class CameraViewModel : ObservableObject
     private const float MinSpeed   = 0.001f;
     private const float MaxSpeed   = 5.0f;
 
-    // ── 公開操作方法 ─────────────────────────────────────
+    // ── 公開操作メソッド ──────────────────────────────────
 
-    /// <summary>Orbit 旋轉 (Alt + 左鍵拖曳)。</summary>
+    /// <summary>Orbit 回転 (Alt + 左ボタンドラッグ)。</summary>
     public void ApplyOrbit(float dx, float dy, float sensitivity = 0.005f)
     {
         Matrix4x4 oldRot = Matrix4x4.CreateFromYawPitchRoll(Yaw, Pitch, 0f);
@@ -41,14 +41,14 @@ internal sealed class CameraViewModel : ObservableObject
         Position = pivot - newForward * OrbitRadius;
     }
 
-    /// <summary>第一人稱視角旋轉 (右鍵拖曳)。</summary>
+    /// <summary>一人称視点回転 (右ボタンドラッグ)。</summary>
     public void ApplyFPSLook(float dx, float dy, float sensitivity = 0.005f)
     {
         Yaw   += dx * sensitivity;
         Pitch  = Math.Clamp(Pitch + dy * sensitivity, -PitchLimit, PitchLimit);
     }
 
-    /// <summary>WASD 移動，每幀呼叫一次。</summary>
+    /// <summary>WASD 移動。毎フレーム一度呼ばれる。</summary>
     public void ApplyMove(float right, float up, float forward)
     {
         if (right == 0f && up == 0f && forward == 0f) return;
@@ -58,7 +58,7 @@ internal sealed class CameraViewModel : ObservableObject
         Position += rgt * right + Vector3.UnitY * up + fwd * forward;
     }
 
-    /// <summary>滾輪縮放 (無右鍵模式)。</summary>
+    /// <summary>マウスホイールズーム (右ボタンなしモード)。</summary>
     public void ApplyZoom(float delta, float sensitivity = 0.005f)
     {
         float dF = delta * sensitivity;
@@ -68,7 +68,7 @@ internal sealed class CameraViewModel : ObservableObject
         OrbitRadius   = Math.Max(0.1f, OrbitRadius - dF);
     }
 
-    /// <summary>按住右鍵時滾輪調整飛行速度。</summary>
+    /// <summary>右ボタン押下中にマウスホイールで飛行速度を調整する。</summary>
     public void AdjustMoveSpeed(float delta)
     {
         float mult = delta > 0 ? 1.2f : 0.8f;
@@ -76,15 +76,15 @@ internal sealed class CameraViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 對焦到指定目標位置。
-    /// 相機從目前距離 (orbitRadius) 的後方面對盤指向目標點。
-    /// 同時更新 OrbitRadius 供後續 Orbit 使用。
+    /// 指定した目標位置にフォーカスする。
+    /// カメラは現在の距離 (orbitRadius) の後方から目標点を向く。
+    /// 後続の Orbit 使用のために OrbitRadius も更新する。
     /// </summary>
-    /// <param name="target">目標節點的世界座標 (Translation)</param>
-    /// <param name="distance">對焦後保持的距離，預設 3.0</param>
+    /// <param name="target">目標ノードのワールド座標 (Translation)</param>
+    /// <param name="distance">フォーカス後に保持する距離。デフォルト 3.0</param>
     public void FocusOn(Vector3 target, float distance = 3.0f)
     {
-        // 保持現有方向角度，只移動位置與距離
+        // 既存の方向角度を保ったまま、位置と距離のみ移動
         Matrix4x4 rot = Matrix4x4.CreateFromYawPitchRoll(Yaw, Pitch, 0f);
         Vector3 forward = Vector3.Transform(Vector3.UnitZ, rot);
 
