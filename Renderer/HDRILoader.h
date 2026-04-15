@@ -1,20 +1,20 @@
 #pragma once
 #include "pch.h"
 
-// 封裝 HDRI 所有相關資源
+// HDRI に関連するすべてのリソースをカプセル化
 struct HDRIResource {
     Microsoft::WRL::ComPtr<ID3D12Resource> texture;
-    Microsoft::WRL::ComPtr<ID3D12Resource> marginalCDF;    // 1D (高度)
-    Microsoft::WRL::ComPtr<ID3D12Resource> conditionalCDF; // 2D (寬度 x 高度)
+    Microsoft::WRL::ComPtr<ID3D12Resource> marginalCDF;    // 1D (高さ)
+    Microsoft::WRL::ComPtr<ID3D12Resource> conditionalCDF; // 2D (幅 x 高さ)
 
-    // 用於防止資源在 GPU 複製完成前被釋放
+    // GPU コピーが完了する前にリソースが解放されるのを防ぐため
     Microsoft::WRL::ComPtr<ID3D12Resource> texUpload;
     Microsoft::WRL::ComPtr<ID3D12Resource> marginalUpload;
     Microsoft::WRL::ComPtr<ID3D12Resource> conditionalUpload;
 
     uint32_t width = 0;
     uint32_t height = 0;
-    float envIntegral = 0.0f; // 整個環境光的總能量，用於 PDF 計算
+    float envIntegral = 0.0f; // 環境光全体の総エネルギー、PDF 計算に使用
 };
 
 class HDRILoader {

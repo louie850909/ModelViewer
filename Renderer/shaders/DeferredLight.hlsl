@@ -7,7 +7,7 @@ struct VSOutput
     float2 uv : TEXCOORD;
 };
 
-// 利用 SV_VertexID 自動產生全螢幕三角形
+// SV_VertexID を利用してフルスクリーン三角形を自動生成
 VSOutput VSMain(uint vertexID : SV_VertexID)
 {
     VSOutput output;
@@ -27,7 +27,7 @@ float4 PSMain(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
     float4 normalRoughness = g_NormalRoughness.Sample(g_sampler, uv);
     float4 worldPosMetallic = g_WorldPosMetallic.Sample(g_sampler, uv);
 
-    // 如果是背景 (法線長度為0，或自訂標記)，直接輸出背景色
+    // 背景の場合 (法線の長さが 0、またはカスタムフラグ)、背景色を直接出力
     if (length(normalRoughness.rgb) < 0.1f)
     {
         return float4(0.2f, 0.2f, 0.2f, 1.0f);
@@ -55,7 +55,7 @@ float4 PSMain(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
         }
         else if (l.type == 1)
         { // Point
-            LDir = normalize(l.position - P); // 此處在 Forward 中為 v.worldPos
+            LDir = normalize(l.position - P); // Forward では v.worldPos に相当
             float dist = length(l.position - P);
             attenuation = 1.0 / (dist * dist + 0.0001);
         }

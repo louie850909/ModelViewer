@@ -5,7 +5,7 @@ void GeometryPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 geomSrvRange;
     geomSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
     CD3DX12_ROOT_PARAMETER1 geomParams[3];
-    geomParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: 全域相機 (2 DWORDs)
+    geomParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: グローバルカメラ (2 DWORDs)
     geomParams[1].InitAsConstants(16, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);                                       // b1: Model Matrix (16 DWORDs)
     geomParams[2].InitAsDescriptorTable(1, &geomSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);                          // t0: Textures (1 DWORD)
 
@@ -51,7 +51,7 @@ void GeometryPass::Init(ID3D12Device* device) {
 }
 
 void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext& ctx) {
-    // == 將 GBuffer 從 SRV 轉回 RTV ==
+    // == GBuffer を SRV から RTV に変換 ==
     D3D12_RESOURCE_BARRIER barriersToRTV[4] = {
         CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetAlbedo(),   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
         CD3DX12_RESOURCE_BARRIER::Transition(ctx.gbuffer->GetNormalRoughness(),   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
@@ -104,7 +104,7 @@ void GeometryPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext
             XMMATRIX modelMat = globalTransforms[n];
             XMFLOAT4X4 modelFloat4x4;
             XMStoreFloat4x4(&modelFloat4x4, XMMatrixTranspose(modelMat));
-            cmdList->SetGraphicsRoot32BitConstants(1, 16, &modelFloat4x4, 0); // 迴圈內只傳 16 個 float
+            cmdList->SetGraphicsRoot32BitConstants(1, 16, &modelFloat4x4, 0); // ループ内で 16 個の float のみを送信
 
             for (int subIdx : node.subMeshIndices) {
                 const auto& sub = mesh->subMeshes[subIdx];

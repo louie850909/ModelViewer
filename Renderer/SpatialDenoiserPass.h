@@ -9,7 +9,7 @@ public:
 
     void SetTemporalPass(TemporalDenoiserPass* tempPass) { m_temporalPass = tempPass; }
 
-    // 取得最後降噪完成後的組合圖像 (Diffuse + Specular Remodulated)
+    // デノイズ完了後の合成画像を取得 (Diffuse + Specular Remodulated)
     ID3D12Resource* GetDenoisedOutput() const {
         return m_finalOutput.Get();
     }
@@ -20,7 +20,7 @@ private:
     ComPtr<ID3D12RootSignature> m_rootSig;
     ComPtr<ID3D12PipelineState> m_pso;
 
-    // 擴充為雙軌 Ping-Pong 緩衝區
+    // 2 系統の Ping-Pong バッファに拡張
     ComPtr<ID3D12Resource> m_pingPongDiffuse[2];
     ComPtr<ID3D12Resource> m_pingPongSpecular[2];
     ComPtr<ID3D12Resource> m_finalOutput;

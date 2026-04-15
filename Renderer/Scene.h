@@ -61,7 +61,7 @@ public:
     std::shared_ptr<Mesh> GetMesh() const { return m_meshes.empty() ? nullptr : m_meshes[0].mesh; }
     const std::vector<MeshInstance>& GetMeshes() const { return m_meshes; }
 
-    // 版本號取得方法
+    // バージョン番号の取得メソッド
     uint32_t GetStructureRevision() const { return m_structureRevision; }
     uint32_t GetTransformRevision() const { return m_transformRevision; }
 
@@ -77,7 +77,7 @@ private:
     int m_nextLightId = 0;
     std::vector<LightNode> m_lights;
 
-    // 版本號變數
+    // バージョン番号変数
     uint32_t m_structureRevision = 1;
     uint32_t m_transformRevision = 1;
 };

@@ -3,7 +3,7 @@
 #include "stb_image.h"
 #include <cmath>
 
-// 輔助函式：建立 Structured Buffer
+// ヘルパー関数：Structured Buffer を作成
 static void CreateBuffer(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
     const void* data, UINT dataSize,
     ComPtr<ID3D12Resource>& defaultBuffer, ComPtr<ID3D12Resource>& uploadBuffer)
@@ -48,7 +48,7 @@ std::shared_ptr<HDRIResource> HDRILoader::LoadHDR(
     resource->height = height;
 
     // ==========================================
-    // 1. 計算 HDRI CDF (重要性採樣地圖)
+    // 1. HDRI CDF を計算 (重要度サンプリングマップ)
     // ==========================================
     std::vector<float> conditionalCDF(width * height, 0.0f);
     std::vector<float> marginalCDF(height, 0.0f);
@@ -56,19 +56,19 @@ std::shared_ptr<HDRIResource> HDRILoader::LoadHDR(
 
     for (int y = 0; y < height; ++y) {
         float rowWeight = 0.0f;
-        // 等距柱狀投影的緯度角度 (用來補償兩極像素被拉伸的面積)
+        // 正距円筒図法の緯度角 (極付近のピクセルが引き伸ばされた面積を補正するため)
         float theta = (y + 0.5f) / height * 3.1415926535f;
         float sinTheta = std::sin(theta);
 
         for (int x = 0; x < width; ++x) {
             int idx = (y * width + x) * 4;
-            // 提取亮度 (Luma)
+            // 輝度 (Luma) を抽出
             float luma = 0.2126f * data[idx] + 0.7152f * data[idx + 1] + 0.0722f * data[idx + 2];
             rowWeight += luma * sinTheta;
             conditionalCDF[y * width + x] = rowWeight;
         }
 
-        // 條件機率歸一化 (0.0 ~ 1.0)
+        // 条件付き確率を正規化 (0.0 ~ 1.0)
         if (rowWeight > 0.0f) {
             for (int x = 0; x < width; ++x) conditionalCDF[y * width + x] /= rowWeight;
         }
@@ -76,26 +76,26 @@ std::shared_ptr<HDRIResource> HDRILoader::LoadHDR(
         marginalCDF[y] = totalWeight;
     }
 
-    // 邊緣機率歸一化 (0.0 ~ 1.0)
+    // 周辺確率を正規化 (0.0 ~ 1.0)
     if (totalWeight > 0.0f) {
         for (int y = 0; y < height; ++y) marginalCDF[y] /= totalWeight;
     }
 
-    // 保存總能量供 HLSL 計算 PDF 使用 (立體角積分常數)
+    // HLSL の PDF 計算に使用する総エネルギーを保存 (立体角積分定数)
     resource->envIntegral = totalWeight * (2.0f * 3.1415926535f * 3.1415926535f) / (width * height);
 
     // ==========================================
-    // 2. 建立 DX12 資源 (Texture + Buffers)
+    // 2. DX12 リソースを作成 (Texture + Buffers)
     // ==========================================
-    // 建立 Marginal Buffer
+    // Marginal Buffer を作成
     CreateBuffer(device, cmdList, marginalCDF.data(), (UINT)(marginalCDF.size() * sizeof(float)),
         resource->marginalCDF, resource->marginalUpload);
 
-    // 建立 Conditional Buffer
+    // Conditional Buffer を作成
     CreateBuffer(device, cmdList, conditionalCDF.data(), (UINT)(conditionalCDF.size() * sizeof(float)),
         resource->conditionalCDF, resource->conditionalUpload);
 
-    // 建立原本的 HDRI Texture2D (保留原本的邏輯)
+    // 元の HDRI Texture2D を作成 (元のロジックを維持)
     UINT rowPitch = width * 4 * sizeof(float);
     UINT imageSize = rowPitch * height;
     auto defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);

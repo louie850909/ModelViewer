@@ -43,13 +43,13 @@ float3 YCoCgToRGB(float3 ycocg)
     );
 }
 
-// 用於計算亮度的 Helper 函式
+// 輝度計算用のヘルパー関数
 float GetLuminance(float3 color)
 {
     return dot(color, float3(0.2126f, 0.7152f, 0.0722f));
 }
 
-// 擴散動態向量 (Velocity Dilation)
+// 動態ベクトルの膨張 (Velocity Dilation)
 float2 GetDilatedVelocity(int2 pos)
 {
     float closestDist = 10000000.0f;
@@ -62,7 +62,7 @@ float2 GetDilatedVelocity(int2 pos)
             int2 samplePos = clamp(pos + int2(x, y), int2(0, 0), int2(width - 1, height - 1));
             float3 n = CurrentNormal[samplePos].xyz;
             
-            // 只有實際有實體幾何的像素才考慮其動態向量 (排除天空的 0 向量污染)
+            // 実際にジオメトリが存在するピクセルの動態ベクトルのみ考慮 (空のゼロベクトル汚染を排除)
             if (length(n) > 0.1f)
             {
                 float3 wPos = CurrentPos[samplePos].xyz;
@@ -78,14 +78,14 @@ float2 GetDilatedVelocity(int2 pos)
     return dilatedVel;
 }
 
-// Catmull-Rom 雙立方插值函式
+// Catmull-Rom 双三次補間関数
 float4 SampleTextureCatmullRom(Texture2D<float4> tex, SamplerState linearSampler, float2 uv, float2 texSize)
 {
     float2 samplePos = uv * texSize;
     float2 texPos1 = floor(samplePos - 0.5f) + 0.5f;
     float2 f = samplePos - texPos1;
 
-    // 計算 Catmull-Rom 權重
+    // Catmull-Rom 重みを計算
     float2 w0 = f * (-0.5f + f * (1.0f - 0.5f * f));
     float2 w1 = 1.0f + f * f * (-2.5f + 1.5f * f);
     float2 w2 = f * (0.5f + f * (2.0f - 1.5f * f));
@@ -98,13 +98,13 @@ float4 SampleTextureCatmullRom(Texture2D<float4> tex, SamplerState linearSampler
     float2 texPos3 = texPos1 + 2.0f;
     float2 texPos12 = texPos1 + offset12;
 
-    // 正規化回 UV 空間
+    // UV 空間に正規化
     texPos0 /= texSize;
     texPos3 /= texSize;
     texPos12 /= texSize;
 
     float4 result = 0.0f;
-    // 5 次硬體雙線性採樣
+    // 5 回のハードウェア双線形サンプリング
     result += tex.SampleLevel(linearSampler, float2(texPos12.x, texPos12.y), 0) * w12.x * w12.y;
     result += tex.SampleLevel(linearSampler, float2(texPos0.x, texPos12.y), 0) * w0.x * w12.y;
     result += tex.SampleLevel(linearSampler, float2(texPos3.x, texPos12.y), 0) * w3.x * w12.y;
@@ -122,7 +122,7 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
 
     float2 uv = (float2(DTid.xy) + 0.5f) / float2(width, height);
     
-    // 取代直接讀取，改用 Dilation
+    // 直接読み取りの代わりに Dilation を使用
     float2 velocity = GetDilatedVelocity(DTid.xy);
 
     float4 currDiffuse = RawDiffuse[DTid.xy];
@@ -186,26 +186,26 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
         float3 hNormal = HistoryNormal.SampleLevel(LinearSampler, prevUV, 0).xyz;
         float3 hPos = HistoryPos.SampleLevel(LinearSampler, prevUV, 0).xyz;
 
-        // 天空與物體的硬性遮罩
+        // 空とオブジェクトのハードマスク
         bool isSky = length(centerNormal) < 0.1f;
         bool wasSky = length(hNormal) < 0.1f;
 
         if (isSky != wasSky)
         {
-            // 當前像素在時域上發生了天空與物體的交替，強制斷開歷史！
+            // 現在のピクセルが時間軸で空とオブジェクトの切り替えが発生、履歴を強制切断！
             historyValid = 0.0f;
         }
         else if (isSky)
         {
-            // 兩者皆為天空：因為我們的天空是實色沒有雜訊，直接捨棄歷史避免模糊
+            // 両方とも空：空はノイズのないベタ塗りのため、ブラーを避けるため履歴を直接破棄
             historyValid = 0.0f;
         }
         else
         {
-            // 正常的實體物件平滑衰減
+            // 通常の実体オブジェクトの滑らかな減衰
             float normalDist = saturate(dot(centerNormal, hNormal));
             
-            // 引入相對於相機的距離差，這對付邊緣「雙線性插值」的深度崩潰極度有效
+            // カメラからの相対距離差を導入、エッジの「双線形補間」による深度崩壊に非常に有効
             float centerDist = length(centerPos - cameraPos);
             float hDist = length(hPos - cameraPos);
             float distDiff = abs(centerDist - hDist) / max(centerDist, 0.001f);
@@ -213,7 +213,7 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             float planeDist = abs(dot(centerNormal, centerPos - hPos));
 
             float normalWeight = exp(-(1.0f - normalDist) * 8.0f);
-            float depthWeight = exp(-planeDist * 15.0f) * exp(-distDiff * 20.0f); // 雙重防禦
+            float depthWeight = exp(-planeDist * 15.0f) * exp(-distDiff * 20.0f); // 二重防御
 
             historyValid = saturate(normalWeight * depthWeight);
         }

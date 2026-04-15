@@ -3,7 +3,7 @@
 
 void TemporalDenoiserPass::Init(ID3D12Device* device) {
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-    heapDesc.NumDescriptors = 15; // 改為 15
+    heapDesc.NumDescriptors = 15; // 15 に変更
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_descriptorHeap));
@@ -58,7 +58,7 @@ void TemporalDenoiserPass::EnsureResources(ID3D12Device* device, int width, int 
         device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &descPos, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_historyPos[i]));
     }
 
-    // 創建 R16G16_FLOAT 儲存 Variance (X: Diffuse, Y: Specular)
+    // R16G16_FLOAT で Variance を保存 (X: Diffuse、Y: Specular)
     m_varianceOutput.Reset();
     auto descVar = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R16G16_FLOAT, width, height, 1, 1);
     descVar.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
@@ -96,7 +96,7 @@ void TemporalDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPas
     device->CreateUnorderedAccessView(m_historyNormal[m_writeIdx].Get(), nullptr, &uavDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
     uavDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
     device->CreateUnorderedAccessView(m_historyPos[m_writeIdx].Get(), nullptr, &uavDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
-    uavDesc.Format = DXGI_FORMAT_R16G16_FLOAT; // ★ 綁定 Variance UAV (u4)
+    uavDesc.Format = DXGI_FORMAT_R16G16_FLOAT; // ★ Variance UAV をバインド (u4)
     device->CreateUnorderedAccessView(m_varianceOutput.Get(), nullptr, &uavDesc, cpuHandle); cpuHandle.Offset(1, srvUavSize);
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -143,7 +143,7 @@ void TemporalDenoiserPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPas
         CD3DX12_RESOURCE_BARRIER::Transition(m_historySpecular[readIdx].Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
         CD3DX12_RESOURCE_BARRIER::Transition(m_historyNormal[readIdx].Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
         CD3DX12_RESOURCE_BARRIER::Transition(m_historyPos[readIdx].Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
-        CD3DX12_RESOURCE_BARRIER::Transition(m_varianceOutput.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE) // 切換為讀取狀態交接給 Spatial
+        CD3DX12_RESOURCE_BARRIER::Transition(m_varianceOutput.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE) // 読み取り状態に切り替えて Spatial に引き渡す
     };
     cmdList->ResourceBarrier(7, postCompute);
 }

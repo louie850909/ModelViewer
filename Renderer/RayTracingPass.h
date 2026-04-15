@@ -12,37 +12,37 @@ public:
 
     void SetEnvironmentMap(std::shared_ptr<HDRIResource> envMap) {
         m_envMap = envMap;
-        m_envMapDirty = true; // 標記環境貼圖已更新
+        m_envMapDirty = true; // 環境マップが更新されたことをマーク
     }
 
 private:
     void BuildTLAS(ID3D12GraphicsCommandList4* cmdList4, RenderPassContext& ctx);
     void EnsureOutputTexture(ID3D12Device* device, int width, int height);
 
-    // TLAS 相關資源
+    // TLAS 関連リソース
     ComPtr<ID3D12Resource> m_tlasBuffer;
     ComPtr<ID3D12Resource> m_tlasScratch;
     ComPtr<ID3D12Resource> m_instanceDescBuffer;
-    UINT m_maxInstances = 1000; // 預留最大物件數量
+    UINT m_maxInstances = 1000; // 最大オブジェクト数を予約
 
-    // DXR 輸出資源
+    // DXR 出力リソース
     ComPtr<ID3D12Resource> m_diffuseOutput;
     ComPtr<ID3D12Resource> m_specularOutput;
     int m_outputWidth = 0;
     int m_outputHeight = 0;
 
-    // DXR 核心資源
+    // DXR コアリソース
     ComPtr<ID3D12RootSignature> m_globalRootSig;
     ComPtr<ID3D12StateObject>   m_dxrStateObject;
     ComPtr<ID3D12Resource>      m_sbtBuffer;
-    ComPtr<ID3D12DescriptorHeap> m_descriptorHeap; // 供 UAV 使用
+    ComPtr<ID3D12DescriptorHeap> m_descriptorHeap; // UAV 用
 
-	// 環境貼圖資源
+	// 環境マップリソース
     std::shared_ptr<HDRIResource> m_envMap;
-    // 用於初始化時的暫存，之後可釋放
+    // 初期化時の一時バッファ、後で解放可能
     ComPtr<ID3D12Resource> m_envMapUpload;
 
-    // 相機常數緩衝區
+    // カメラ定数バッファ
     ComPtr<ID3D12Resource> m_cameraCB;
     struct CameraParams {
         DirectX::XMFLOAT4X4 viewProjInv;
@@ -51,13 +51,13 @@ private:
     };
     CameraParams* m_mappedCameraCB = nullptr;
 
-	// SBT 相關參數
+	// SBT 関連パラメータ
     ComPtr<ID3D12RootSignature> m_localRootSig;
     UINT m_instanceCount = 0;
     UINT m_sbtHitGroupOffset = 0;
     UINT m_sbtHitGroupStride = 0;
 
-    // 狀態追蹤變數
+    // 状態追跡変数
     uint32_t m_lastStructureRevision = 0;
     uint32_t m_lastTransformRevision = 0;
     bool m_envMapDirty = true;

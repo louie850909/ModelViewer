@@ -31,7 +31,7 @@ VSOut VSMain(VSIn v)
 {
     VSOut o;
     o.pos      = mul(float4(v.pos, 1.0), mvp);
-    // mul(mat, col-vec) → 等於 (M^-1)^T * n = inverse-transpose 法線變換
+    // mul(mat, col-vec) → (M^-1)^T * n に等しい = inverse-transpose 法線変換
     o.normal   = normalize(mul((float3x3)normalMatrix, v.normal));
     o.uv       = v.uv;
     o.worldPos = mul(float4(v.pos, 1.0), modelMatrix).xyz;

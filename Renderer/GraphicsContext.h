@@ -12,28 +12,28 @@ public:
     ID3D12Device5* GetDevice5() const { return m_device5.Get(); }
     bool IsDxrSupported() const { return m_isDxrSupported; }
 
-    // 取得底層資源
+    // 基底リソースを取得
     ID3D12Device* GetDevice() const { return m_device.Get(); }
     ID3D12GraphicsCommandList* GetCommandList() const { return m_cmdList.Get(); }
     ID3D12CommandQueue* GetCommandQueue() const { return m_cmdQueue.Get(); }
 
-    // 取得當前 BackBuffer 的 RTV
+    // 現在の BackBuffer の RTV を取得
     D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferRTV() const {
         return CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescSize);
     }
 
-    // --- 取得目前的 Back Buffer 資源 ---
+    // --- 現在の Back Buffer リソースを取得 ---
     ID3D12Resource* GetCurrentBackBuffer() const {
-        // 註：請確認此處的變數名稱與您的 GraphicsContext 宣告一致
-        // 若您的陣列命名為 m_backBuffers，請對應修改
+        // 注：ここの変数名が GraphicsContext の宣言と一致していることを確認
+        // 配列が m_backBuffers という名前の場合は対応して変更
         return m_renderTargets[m_frameIndex].Get();
     }
-    // 取得 Depth Stencil View
+    // Depth Stencil View を取得
     D3D12_CPU_DESCRIPTOR_HANDLE GetDSV() const {
         return m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
     }
 
-    // 渲染迴圈控制
+    // レンダリングループ制御
     void ResetCommandList();
     void SetRenderTargetsAndClear(const float clearColor[4]);
     void ExecuteCommandListAndPresent();
@@ -59,7 +59,7 @@ private:
     ComPtr<ID3D12DescriptorHeap>      m_rtvHeap;
     ComPtr<ID3D12Resource>            m_renderTargets[FRAME_COUNT];
 
-    // 追蹤每個 BackBuffer 的當前狀態
+    // 各 BackBuffer の現在の状態を追跡
     D3D12_RESOURCE_STATES m_backBufferStates[FRAME_COUNT] = {
         D3D12_RESOURCE_STATE_PRESENT,
         D3D12_RESOURCE_STATE_PRESENT,

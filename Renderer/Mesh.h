@@ -10,29 +10,29 @@ struct Vertex {
 };
 
 struct SubMesh {
-	UINT indexOffset = 0; // 在全局 Index Buffer 中的起始位置 (單位是 Index，不是 Byte)
+	UINT indexOffset = 0; // グローバル Index Buffer 内の開始位置 (単位は Index、Byte ではない)
 	UINT indexCount = 0;
     int  materialIndex = -1;
-    bool isTransparent = false; // 用於玻璃、水滴 (Alpha Blend / Transmission)
-    bool isAlphaTested = false; // 用於樹葉、鐵絲網 (Alpha Mask)
+    bool isTransparent = false; // ガラス、水滴に使用 (Alpha Blend / Transmission)
+    bool isAlphaTested = false; // 葉、金網に使用 (Alpha Mask)
 
     // KHR_materials_transmission
-    float transmissionFactor = 0.0f;  // 0=不透明, 1=全穿透
-    float ior = 1.5f;                 // 折射率，預設玻璃
+    float transmissionFactor = 0.0f;  // 0=不透明, 1=完全透過
+    float ior = 1.5f;                 // 屈折率、デフォルトはガラス
 
-    // 新增：baseColorFactor (無貼圖時的基底色)
+    // 追加：baseColorFactor (テクスチャなし時のベースカラー)
     float baseColorFactor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
     bool  hasBaseColorTexture = false;
 };
 
 struct SceneNode {
     std::string name;
-    int parentIndex = -1; // -1 代表這是根節點 (沒有父節點)
+    int parentIndex = -1; // -1 はルートノード (親ノードなし) を表す
     float t[3] = { 0.0f, 0.0f, 0.0f };          // Translation
     float r[4] = { 0.0f, 0.0f, 0.0f, 1.0f };    // Rotation (Quaternion: x, y, z, w)
     float s[3] = { 1.0f, 1.0f, 1.0f };          // Scale
 
-    // 記錄這個節點要畫哪些子網格 (儲存 m_mesh->subMeshes 的 Index)
+    // このノードが描画するサブメッシュを記録 (m_mesh->subMeshes の Index を格納)
     std::vector<int> subMeshIndices;
 };
 
@@ -40,21 +40,21 @@ struct Mesh {
     std::vector<Vertex>   vertices;
     std::vector<uint32_t> indices;
     std::vector<SubMesh>  subMeshes;
-    // 記錄解析出來的貼圖絕對路徑 (索引對應 materialIndex)
+    // 解析されたテクスチャの絶対パスを記録 (インデックスは materialIndex に対応)
     std::vector<std::string> texturePaths;
     std::vector<std::string> metallicRoughnessPaths;
     std::vector<std::string> normalPaths;
 
-    // 用來儲存整個場景的節點層級 (攤平的陣列)
+    // シーン全体のノード階層を格納 (フラット化された配列)
     std::vector<SceneNode> nodes;
 
-    // GPU 資源
+    // GPU リソース
     ComPtr<ID3D12Resource> vertexBuffer;
     ComPtr<ID3D12Resource> indexBuffer;
     D3D12_VERTEX_BUFFER_VIEW vbView = {};
     D3D12_INDEX_BUFFER_VIEW  ibView = {};
 
-    // --- DXR BLAS 資源 ---
+    // --- DXR BLAS リソース ---
     std::vector<ComPtr<ID3D12Resource>> blasBuffers;
 };
 
@@ -63,5 +63,5 @@ struct alignas(4) MaterialConstants {
     float    transmissionFactor;
     float    ior;
     float    baseColorFactor[4];
-    uint32_t _pad;  // 對齊至 32 bytes
+    uint32_t _pad;  // 32 bytes にアライメント
 };

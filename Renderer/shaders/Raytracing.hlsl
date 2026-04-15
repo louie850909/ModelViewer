@@ -4,16 +4,16 @@ RaytracingAccelerationStructure Scene : register(t0, space0);
 RWTexture2D<float4> DiffuseTarget : register(u0, space0);
 RWTexture2D<float4> SpecularTarget : register(u1, space0);
 Texture2D<float4> EnvMap : register(t1, space0);
-Buffer<float> EnvMarginalCDF : register(t2, space0); // 邊緣機率分佈 (1D)
-Buffer<float> EnvConditionalCDF : register(t3, space0); // 條件機率分佈 (2D)
+Buffer<float> EnvMarginalCDF : register(t2, space0); // 周辺確率分布 (1D)
+Buffer<float> EnvConditionalCDF : register(t3, space0); // 条件付き確率分布 (2D)
 
 cbuffer CameraParams : register(b0, space0)
 {
     float4x4 viewProjInv;
     float3 cameraPos;
     uint frameCount;
-    float envIntegral; // 環境光總能量 (供 PDF 計算)
-    float3 _padCamera; // 補齊 16 bytes 對齊
+    float envIntegral; // 環境光の総エネルギー (PDF 計算用)
+    float3 _padCamera; // 16 bytes アライメントを補完
 };
 
 struct Light
@@ -66,10 +66,10 @@ static const float INV_PI = 0.318309886f;
 static const float INV_TWO_PI = 0.159154943f;
 
 // ==========================================
-// 亂數與取樣工具
+// 乱数とサンプリングツール
 // ==========================================
 
-// 產生在 3x3 空間內分佈非常均勻的低差異雜訊，特別適合 SVGF 降噪
+// 3x3 空間内で非常に均一に分布する低差異ノイズを生成、SVGF デノイズに特に適している
 float IGN(float2 pixelPos)
 {
     float3 magic = float3(0.06711056f, 0.00583715f, 52.9829189f);
@@ -101,7 +101,7 @@ float3 getCosineWeightedSample(float3 n, inout uint seed)
     float y = r * sin(theta);
     float z = sqrt(max(0.0f, 1.0f - u1));
 
-    // 建立切線空間 (Tangent Space)
+    // 接線空間 (Tangent Space) を構築
     float3 up = abs(n.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
     float3 t = normalize(cross(up, n));
     float3 b = cross(n, t);
@@ -109,28 +109,28 @@ float3 getCosineWeightedSample(float3 n, inout uint seed)
     return normalize(t * x + b * y + n * z);
 }
 
-// 將 3D 方向向量轉換為 2D 球面 UV 座標
+// 3D 方向ベクトルを 2D 球面 UV 座標に変換
 float2 GetSphericalUV(float3 v)
 {
-    // 假設 Y 軸朝上 (Y-Up)
-    // atan2 取得水平經度 [-PI, PI] -> u
-    // asin 取得垂直緯度 [-PI/2, PI/2] -> v
+    // Y 軸上向き (Y-Up) と仮定
+    // atan2 で水平経度 [-PI, PI] を取得 -> u
+    // asin で垂直緯度 [-PI/2, PI/2] を取得 -> v
     float2 uv = float2(atan2(v.z, v.x), asin(v.y));
-    
-    // 映射到 [-0.5, 0.5]
+
+    // [-0.5, 0.5] にマッピング
     uv *= float2(INV_TWO_PI, INV_PI);
-    
-    // 映射到 [0, 1]
+
+    // [0, 1] にマッピング
     uv += 0.5f;
-    
-    // DirectX 的 V 座標起點在上方，故反轉 V
+
+    // DirectX の V 座標は上端が起点なので V を反転
     uv.y = 1.0f - uv.y;
     
     return uv;
 }
 
 // ==========================================
-// HDRI 輔助搜尋與採樣 (NEE 核心)
+// HDRI 補助検索とサンプリング (NEE コア)
 // ==========================================
 uint FindIntervalMarginal(float u, uint EnvHeight)
 {
@@ -175,12 +175,12 @@ EnvSampleResult SampleEnv(float2 u, float envInt)
     uint EnvWidth, EnvHeight;
     EnvMap.GetDimensions(EnvWidth, EnvHeight);
 
-    // 透過二分搜尋取得對應的高亮度像素位置
+    // 二分探索で対応する高輝度ピクセル位置を取得
     uint y = FindIntervalMarginal(u.y, EnvHeight);
     uint x = FindIntervalConditional(y, u.x, EnvWidth);
     float2 uv = float2((x + 0.5f) / EnvWidth, (y + 0.5f) / EnvHeight);
 
-    // 將 UV 轉回 3D 空間方向 (反解 GetSphericalUV)
+    // UV を 3D 空間方向に逆変換 (GetSphericalUV の逆解き)
     float v_real = 1.0f - uv.y;
     float phi = (uv.x - 0.5f) * 2.0f * PI;
     float theta = (v_real - 0.5f) * PI;
@@ -197,7 +197,7 @@ EnvSampleResult SampleEnv(float2 u, float envInt)
     EnvSampleResult res;
     res.direction = normalize(dir);
     res.color = color;
-    // 將亮度除以總能量，得到該方向的機率密度 (PDF)
+    // 輝度を総エネルギーで割り、その方向の確率密度 (PDF) を求める
     res.pdf = max(luma / max(envInt, 0.0001f), 0.0001f);
     return res;
 }
@@ -207,14 +207,14 @@ EnvSampleResult SampleEnv(float2 u, float envInt)
 // ==========================================
 struct Payload
 {
-    float3 diffuse; // 收集到的漫反射能量
-    uint depth; // 目前彈跳次數
-    float3 specular; // 收集到的高光能量
-    uint seed; // 亂數種子
-    float3 throughput; // 光線衰減權重
-    bool isSpecularBounce; // 標記這條光線在第一次彈跳時是否走了高光路徑
-    float lastRayPdf; // 上一段光線的 BRDF 機率密度
-    float lastRoughness; // 上一段反射表面的粗糙度
+    float3 diffuse; // 収集された拡散反射エネルギー
+    uint depth; // 現在のバウンス回数
+    float3 specular; // 収集された鏡面反射エネルギー
+    uint seed; // 乱数シード
+    float3 throughput; // 光線の減衰ウェイト
+    bool isSpecularBounce; // 最初のバウンスで鏡面反射パスを通ったかを示すフラグ
+    float lastRayPdf; // 前の光線の BRDF 確率密度
+    float lastRoughness; // 前の反射面の粗さ
     float coneWidth; // 4 bytes
     float coneSpreadAngle; // 4 bytes
 };
@@ -241,18 +241,18 @@ void Miss(inout Payload payload)
     float2 envUV = GetSphericalUV(rayDir);
     float3 skyColor = EnvMap.SampleLevel(texSampler, envUV, 0).rgb;
 
-    // 計算我們如果用 NEE 去採樣這片天空，機率密度是多少
+    // NEE で天空をサンプリングした場合の確率密度を計算
     float luma = dot(skyColor, float3(0.2126f, 0.7152f, 0.0722f));
     float pdf_env = max(luma / max(envIntegral, 0.0001f), 0.0001f);
 
     float misWeight = 1.0f;
     
-    // 如果這是一條間接反彈射線，執行 MIS
+    // 間接バウンス光線の場合、MIS を実行
     if (payload.depth > 0)
     {
         if (payload.lastRoughness < 0.05f)
         {
-            // 非常光滑的表面 (近乎鏡面)，NEE 很難主動採樣到，這時完全依賴 BRDF 盲射
+            // 非常に滑らかな表面 (鏡面に近い)、NEE での能動的なサンプリングが困難で BRDF ブラインドシューティングに完全依存
             misWeight = 1.0f;
         }
         else
@@ -321,9 +321,9 @@ void RayGen()
 
         TraceRay(Scene, RAY_FLAG_NONE, 0xFF, 0, 2, 0, ray, payload);
 
-        // 螢火蟲抑制 (Firefly Clamping)
-        // 限制單次光線反彈帶回來的最大能量，避免 HDRI 極亮點摧毀時域累積的歷史
-        const float MAX_RADIANCE = 20.0f; // 可視您的 HDRI 亮度上下微調此數值
+        // ホタル抑制 (Firefly Clamping)
+        // 1 回の光線バウンスで持ち帰る最大エネルギーを制限し、HDRI の極めて明るい点が時間累積の履歴を破壊しないようにする
+        const float MAX_RADIANCE = 20.0f; // HDRI の輝度に応じてこの値を調整可能
 
         float lumaD = dot(payload.diffuse, float3(0.2126f, 0.7152f, 0.0722f));
         if (lumaD > MAX_RADIANCE) 
@@ -337,7 +337,7 @@ void RayGen()
         accumSpecular += payload.specular;
     }
 
-    // 分別輸出到兩張貼圖
+    // 2 枚のテクスチャに個別出力
     DiffuseTarget[launchIndex] = float4(accumDiffuse / (float) SPP, 1.0f);
     SpecularTarget[launchIndex] = float4(accumSpecular / (float) SPP, 1.0f);
 }
@@ -346,7 +346,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 {
     uint primitiveIndex = PrimitiveIndex();
     
-    // 透過 Index Buffer 找出這三個頂點的索引
+    // Index Buffer を通して 3 頂点のインデックスを取得
     uint i0 = IndexBuffer.Load(primitiveIndex * 12 + 0);
     uint i1 = IndexBuffer.Load(primitiveIndex * 12 + 4);
     uint i2 = IndexBuffer.Load(primitiveIndex * 12 + 8);
@@ -359,7 +359,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     float2 uv1 = VertexBuffer[i1].uv;
     float2 uv2 = VertexBuffer[i2].uv;
     
-    // 利用重心座標進行插值
+    // 重心座標を使って補間
     float3 barycentrics = float3(1.0f - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
     float3 localNormal = normalize(n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z);
     float2 localUV = uv0 * barycentrics.x + uv1 * barycentrics.y + uv2 * barycentrics.z;
@@ -369,7 +369,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     float3 geoNormal = worldNormal;
     float3 worldPos = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     
-    // 攝影機視角方向
+    // カメラの視線方向
     float3 V = normalize(cameraPos - worldPos);
     
     // Mipmap LOD 計算 (Ray Cone)
@@ -379,7 +379,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
     if (textureIndex != 0xFFFFFFFF)
     {
-        // 1. 取得 Object Space 頂點並利用 ObjectToWorld 轉為 World Space 向量
+        // 1. Object Space の頂点を取得し ObjectToWorld で World Space ベクトルに変換
         float3 p0 = VertexBuffer[i0].position;
         float3 p1 = VertexBuffer[i1].position;
         float3 p2 = VertexBuffer[i2].position;
@@ -394,11 +394,11 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         // UV Space 面積
         float uvArea = abs((uv1.x - uv0.x) * (uv2.y - uv0.y) - (uv2.x - uv0.x) * (uv1.y - uv0.y)) * 0.5f;
 
-        // 動態取得當前貼圖的寬高
+        // 現在のテクスチャの幅と高さを動的に取得
         uint texWidth, texHeight;
         allTextures[NonUniformResourceIndex(textureIndex)].GetDimensions(texWidth, texHeight);
 
-        // 計算覆蓋像素並推導 LOD
+        // カバーピクセルを計算して LOD を導出
         float footprintArea = 3.14159265f * currentConeWidth * currentConeWidth;
         float uvFootprintArea = (footprintArea / max(worldArea, 1e-8f)) * uvArea;
         float texAreaPixels = uvFootprintArea * (float) texWidth * (float) texHeight;
@@ -407,7 +407,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     }
 
     // ==========================================
-    // 1. 採樣 PBR 貼圖 (Albedo, Roughness, Metallic)
+    // 1. PBR テクスチャをサンプリング (Albedo、Roughness、Metallic)
     // ==========================================
     float3 baseColor = float3(0.9f, 0.9f, 0.9f);
     float roughness = 0.5f;
@@ -417,7 +417,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
     if (textureIndex != 0xFFFFFFFF)
     {
-        // 有貼圖：貼圖色 * baseColorFactor
+        // テクスチャあり：テクスチャ色 * baseColorFactor
         float4 texColor = allTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(texSampler, localUV, lod);
         baseColor = pow(texColor.rgb, 2.2f) * baseColorFactorLinear;
 
@@ -426,9 +426,9 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         metallic = saturate(mrColor.b);
         
         float3 localNormalMap = allTextures[NonUniformResourceIndex(textureIndex + 2)].SampleLevel(texSampler, localUV, lod).xyz;
-        localNormalMap = localNormalMap * 2.0f - 1.0f; // 轉換到 [-1, 1]
-        
-        // 反轉 Y 軸以修正 glTF (OpenGL) 與 DX12 的法線系統差異
+        localNormalMap = localNormalMap * 2.0f - 1.0f; // [-1, 1] に変換
+
+        // Y 軸を反転して glTF (OpenGL) と DX12 の法線システムの差異を修正
         localNormalMap.y = -localNormalMap.y;
 
         float3 e1 = VertexBuffer[i1].position - VertexBuffer[i0].position;
@@ -440,10 +440,10 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         float3 worldTangent;
         float r = 1.0f / det;
         
-        // 【防呆機制】避免 UV 退化導致除以零 (NaN)
+        // 【フェイルセーフ】UV の縮退によるゼロ除算 (NaN) を防ぐ
         if (abs(det) < 1e-6f)
         {
-            // 若沒有有效的 UV，給予一個預設切線避免崩潰
+            // 有効な UV がない場合、クラッシュを防ぐためデフォルトの接線を設定
             float3 up = abs(worldNormal.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
             worldTangent = normalize(cross(up, worldNormal));
         }
@@ -454,27 +454,27 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
             worldTangent = normalize(mul((float3x3) mO2W, objTangent));
         }
         
-        // 確保正交化
+        // 正規直交化を確保
         worldTangent = normalize(worldTangent - dot(worldTangent, worldNormal) * worldNormal);
-        // 利用 r 的正負號修正鏡像 UV 的副切線方向
+        // r の符号を使ってミラー UV の従接線方向を修正
         float handedness = (r < 0.0f) ? -1.0f : 1.0f;
         float3 worldBitangent = cross(worldNormal, worldTangent) * handedness;
         
-        // 覆蓋掉原本平滑的 worldNormal，讓後續的折射與反射都有凹凸細節！
+        // 元の滑らかな worldNormal を上書きし、後続の屈折・反射に凹凸の細部を加える！
         float3x3 tbn = float3x3(worldTangent, worldBitangent, worldNormal);
         worldNormal = normalize(mul(localNormalMap, tbn));
     }
     else
     {
-        // 無貼圖（如 PawnTopWhite）：直接用 baseColorFactor
+        // テクスチャなし (例: PawnTopWhite)：baseColorFactor を直接使用
         baseColor = baseColorFactorLinear;
     }
 
-    // 基礎反射率：非金屬預設為 4%，金屬則帶有原本的顏色
+    // 基礎反射率：非金属のデフォルトは 4%、金属は元の色を持つ
     float3 F0 = lerp(float3(0.04f, 0.04f, 0.04f), baseColor, metallic);
 
     // ==========================================
-    // 2. 計算直接光照 (Direct Illumination + GGX Specular)
+    // 2. 直接照明を計算 (Direct Illumination + GGX Specular)
     // ==========================================
     float3 directLighting = float3(0, 0, 0);
 
@@ -485,11 +485,11 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         float attenuation = 1.0f;
         float shadowTMax = 10000.0f;
 
-        if (L.type == 0) // 平行光
+        if (L.type == 0) // 平行光 (Directional Light)
         {
             lightDir = normalize(-L.direction);
         }
-        else // 點光源
+        else // 点光源 (Point Light)
         {
             float3 d = L.position - worldPos;
             float dist = length(d);
@@ -502,7 +502,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
         if (ndotl > 0.0f)
         {
-            // 陰影判定
+            // シャドウ判定
             RayDesc shadowRay;
             shadowRay.Origin = worldPos + worldNormal * 0.001f;
             shadowRay.Direction = lightDir;
@@ -515,25 +515,25 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
 
             if (!shadowPayload.isHit)
             {
-                // --- PBR 核心光照計算 ---
+                // --- PBR コア照明計算 ---
                 float3 H = normalize(V + lightDir);
                 float NDF = DistributionGGX(worldNormal, H, roughness);
                 float G = GeometrySmith(worldNormal, V, lightDir, roughness);
                 float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0);
 
-                // 高光項 (Specular)
+                // 鏡面反射項 (Specular)
                 float3 numerator = NDF * G * F;
                 float denominator = 4.0f * max(dot(worldNormal, V), 0.0f) * ndotl + 0.0001f;
                 float3 specular = numerator / denominator;
 
-                // 漫反射項 (Diffuse)
+                // 拡散反射項 (Diffuse)
                 float3 kD = (1.0f - F) * (1.0f - metallic);
                 float3 diff = kD * baseColor / PI;
 
                 float3 currentDirectDiffuse = diff * L.color * L.intensity * ndotl * attenuation;
                 float3 currentDirectSpecular = specular * L.color * L.intensity * ndotl * attenuation;
 
-                // 精確拆分直接光照
+                // 直接照明を正確に分離
                 if (payload.depth == 0)
                 {
                     payload.diffuse += payload.throughput * currentDirectDiffuse;
@@ -541,7 +541,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                 }
                 else
                 {
-                    // 如果是後續彈跳，根據第一次彈跳的屬性來歸類能量
+                    // 後続バウンスの場合、最初のバウンスの属性に基づいてエネルギーを分類
                     if (payload.isSpecularBounce)
                     {
                         payload.specular += payload.throughput * (currentDirectDiffuse + currentDirectSpecular);
@@ -559,9 +559,9 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     float3 F_bounce = FresnelSchlick(max(dot(worldNormal, V), 0.0f), F0);
     float specProbability = clamp(lerp(max(F_bounce.r, max(F_bounce.g, F_bounce.b)), 1.0f, metallic), 0.05f, 0.95f);
     // ==========================================
-    // 2.5 環境光直接採樣 (Next Event Estimation + MIS)
+    // 2.5 環境光直接サンプリング (Next Event Estimation + MIS)
     // ==========================================
-    // 對於有一定粗糙度的表面，主動尋找 HDRI 中的高亮點
+    // ある程度の粗さを持つ表面に対して、HDRI 内のハイライト点を積極的に探す
     if (roughness >= 0.05f)
     {
         float2 uEnv = float2(rand(payload.seed), rand(payload.seed));
@@ -596,7 +596,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                 float3 kD = (1.0f - F) * (1.0f - metallic);
                 float3 diff = kD * baseColor / PI;
 
-                // --- MIS 評估：計算 BRDF PDF ---
+                // --- MIS 評価：BRDF PDF を計算 ---
                 float G1 = GeometrySchlickGGX(max(dot(worldNormal, V), 0.0f), roughness);
                 float pdf_spec = (NDF * G1) / (4.0f * max(dot(worldNormal, V), 0.0f) + 0.0001f);
                 float pdf_diff = ndotl_env / PI;
@@ -625,26 +625,26 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
     }
 
     // ==========================================
-    // 3. 計算間接光照與材質反射 (Indirect Bounce)
+    // 3. 間接照明とマテリアル反射を計算 (Indirect Bounce)
     // ==========================================
     if (payload.depth < 2)
     {
-        // 更新 Ray Cone 參數以供下一次反彈使用
+        // Ray Cone パラメータを次のバウンスのために更新
         payload.coneWidth = currentConeWidth;
-        payload.coneSpreadAngle += roughness * 0.1f; // 表面粗糙度會造成後續反彈光線發散
+        payload.coneSpreadAngle += roughness * 0.1f; // 表面の粗さにより後続バウンス光線が発散する
         
-        bool isFirstBounce = (payload.depth == 0); // ← 必須在 depth++ 之前
+        bool isFirstBounce = (payload.depth == 0); // ← depth++ の前に行う必要がある
         payload.depth++;
 
         float randomVal = rand(payload.seed);
 
         if (transmissionFactor > 0.0f)
         {
-            // Schlick Fresnel 近似：掠射角反射率高，正入射幾乎全折射
+            // Schlick Fresnel 近似：グレージング角で反射率が高く、正入射ではほぼ全屈折
             float cosTheta = abs(dot(-WorldRayDirection(), worldNormal));
             float f0_scalar = F0.r;
             float F_schlick = f0_scalar + (1.0f - f0_scalar) * pow(1.0f - cosTheta, 5.0f);
-            float fresnelReflect = F_schlick; // 只考慮表面反射率，不乘 transmissionFactor
+            float fresnelReflect = F_schlick; // 表面反射率のみを考慮し、transmissionFactor は乗算しない
 
             if (randomVal < fresnelReflect)
             {
@@ -672,10 +672,10 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                     {
                         float survivalProb = max(maxThroughput, 0.05f);
                         if (rand(payload.seed) > survivalProb)
-                            return; // 提早終止
-                        payload.throughput /= survivalProb; // 能量補償
+                            return; // 早期終了
+                        payload.throughput /= survivalProb; // エネルギー補償
                     }
-                    
+
                     RayDesc bounceRay;
                     bounceRay.Origin = worldPos + worldNormal * 0.001f;
                     bounceRay.Direction = rDir;
@@ -686,7 +686,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
             }
             else
             {
-                // ── 折射穿透 ──
+                // ── 屈折透過 ──
                 if (isFirstBounce)
                     payload.isSpecularBounce = false;
 
@@ -701,13 +701,13 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                     refractDir = reflect(incomingDir, refractNormal);
 
                 float refractProb = 1.0f - fresnelReflect;
-                float pathLength = RayTCurrent(); // 光線在介質中走的距離
+                float pathLength = RayTCurrent(); // 光線が媒質内を進んだ距離
 
-                // 將 baseColor 轉為吸收係數：顏色越深吸收越快
-                // 加 epsilon 防止 log(0) — baseColor 若為純白不吸收，純黑吸收極強
+                // baseColor を吸収係数に変換：色が暗いほど吸収が速い
+                // epsilon を加えて log(0) を防ぐ — 純白は吸収なし、純黒は極めて強い吸収
                 float3 absorptionCoeff = -log(max(baseColor, 0.001f));
 
-                // Beer-Lambert 衰減，乘以 transmissionFactor 控制整體穿透率
+                // Beer-Lambert 減衰、transmissionFactor を乗算して全体の透過率を制御
                 float3 beerLambert = exp(-absorptionCoeff * pathLength) * transmissionFactor;
                 payload.throughput *= beerLambert / max(refractProb, 0.001f);
                 
@@ -716,8 +716,8 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                 {
                     float survivalProb = max(maxThroughput, 0.05f);
                     if (rand(payload.seed) > survivalProb)
-                        return; // 提早終止
-                    payload.throughput /= survivalProb; // 能量補償
+                        return; // 早期終了
+                    payload.throughput /= survivalProb; // エネルギー補償
                 }
 
                 RayDesc transRay;
@@ -730,7 +730,7 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
         }
         else
         {
-            // ── 非 Transmission 材質：diffuse/specular bounce ──
+            // ── 非 Transmission マテリアル：diffuse/specular bounce ──
             float3 bounceDir;
 
             if (randomVal < specProbability)
@@ -768,27 +768,27 @@ void ClosestHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes 
                 bounceRay.TMin = 0.01f;
                 bounceRay.TMax = 10000.0f;
                 
-                // --- 準備發射反彈射線之前 ---
+                // --- バウンス光線を発射する前の準備 ---
                 float maxThroughput = max(payload.throughput.r, max(payload.throughput.g, payload.throughput.b));
                 if (maxThroughput < 0.1f)
                 {
                     float survivalProbability = max(maxThroughput, 0.05f);
                     if (rand(payload.seed) > survivalProbability)
                     {
-                        return; // 提早終止這條光線
+                        return; // この光線を早期終了
                     }
-                    payload.throughput /= survivalProbability; // 能量補償
+                    payload.throughput /= survivalProbability; // エネルギー補償
                 }
                 
                 if (transmissionFactor > 0.0f)
                 {
-                    // 玻璃與折射視為純 Delta Function 鏡面
+                    // ガラスと屈折は純粋な Delta Function 鏡面として扱う
                     payload.lastRayPdf = 1.0f;
                     payload.lastRoughness = 0.0f;
                 }
                 else
                 {
-                    // 一般材質：評估這條反射路徑的 BRDF PDF
+                    // 通常マテリアル：この反射パスの BRDF PDF を評価
                     float pdf_specular_bounce = 0.0f;
                     float3 bounceH = normalize(V + bounceDir);
                     if (dot(worldNormal, bounceDir) > 0.0f)
@@ -831,13 +831,13 @@ void AnyHit(inout Payload payload, in BuiltInTriangleIntersectionAttributes attr
     float3 barycentrics = float3(1.0f - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
     float2 localUV = uv0 * barycentrics.x + uv1 * barycentrics.y + uv2 * barycentrics.z;
     
-    // 採樣 Base Color 貼圖的 Alpha 通道
+    // Base Color テクスチャの Alpha チャンネルをサンプリング
     float alpha = allTextures[NonUniformResourceIndex(textureIndex)].SampleLevel(texSampler, localUV, 0).a;
     alpha *= baseColorFactor_a;
     
     if (alpha < 0.5f)
     {
-        IgnoreHit(); // 透明區域，忽略這次碰撞
+        IgnoreHit(); // 透明領域、この衝突を無視
     }
 }
 

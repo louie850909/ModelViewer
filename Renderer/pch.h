@@ -5,7 +5,7 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <DirectXMath.h>
-#include "d3dx12.h"                                    // ← 加這行
+#include "d3dx12.h"                                    // ← この行を追加
 #include <d3dcompiler.h>
 #include <microsoft.ui.xaml.media.dxinterop.h>
 

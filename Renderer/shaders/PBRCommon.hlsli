@@ -35,39 +35,39 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
 // Phase 2: GGX VNDF Core Functions
 // ==========================================
 
-// 建立切線空間矩陣 (TBN)
+// 接線空間行列 (TBN) を構築
 float3x3 GetTBN(float3 n)
 {
     float3 up = abs(n.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
     float3 t = normalize(cross(up, n));
     float3 b = cross(n, t);
-    return float3x3(t, b, n); // 在 HLSL 中，這會將 t, b, n 設定為矩陣的三個 Row
+    return float3x3(t, b, n); // HLSL では t, b, n が行列の 3 つの Row に設定される
 }
 
-// GGX VNDF (Visible Normal Distribution Function) 採樣
-// 參考 Eric Heitz, "Sampling the GGX Distribution of Visible Normals", JCGT 2018
+// GGX VNDF (Visible Normal Distribution Function) サンプリング
+// 参考: Eric Heitz, "Sampling the GGX Distribution of Visible Normals", JCGT 2018
 float3 SampleGGXVNDF(float3 Ve, float alpha_x, float alpha_y, float U1, float U2)
 {
-    // 1. 將視角方向轉換到半球配置 (Hemisphere configuration)
+    // 1. 視線方向を半球配置 (Hemisphere configuration) に変換
     float3 Vh = normalize(float3(alpha_x * Ve.x, alpha_y * Ve.y, Ve.z));
-    
-    // 2. 建立正交基底 (Orthonormal basis)
+
+    // 2. 正規直交基底 (Orthonormal basis) を構築
     float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
     float3 T1 = lensq > 0.0f ? float3(-Vh.y, Vh.x, 0.0f) * rsqrt(lensq) : float3(1.0f, 0.0f, 0.0f);
     float3 T2 = cross(Vh, T1);
-    
-    // 3. 投影面積的參數化
+
+    // 3. 投影面積のパラメータ化
     float r = sqrt(U1);
     float phi = 2.0f * PI * U2;
     float t1 = r * cos(phi);
     float t2 = r * sin(phi);
     float s = 0.5f * (1.0f + Vh.z);
     t2 = (1.0f - s) * sqrt(max(0.0f, 1.0f - t1 * t1)) + s * t2;
-    
-    // 4. 重投影回半球
+
+    // 4. 半球に再投影
     float3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0f, 1.0f - t1 * t1 - t2 * t2)) * Vh;
-    
-    // 5. 將法線轉換回橢球配置 (Ellipsoid configuration)
+
+    // 5. 法線を楕円体配置 (Ellipsoid configuration) に変換して戻す
     return normalize(float3(alpha_x * Nh.x, alpha_y * Nh.y, max(0.0f, Nh.z)));
 }
 

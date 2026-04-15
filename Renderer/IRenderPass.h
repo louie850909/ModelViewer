@@ -4,10 +4,10 @@
 #include "Scene.h"
 #include "GBuffer.h"
 
-// 宣告供各個 Pass 讀取 Shader 的輔助函式 (實作保留於 Renderer.cpp)
+// 各 Pass が Shader を読み取るためのヘルパー関数を宣言 (実装は Renderer.cpp に保持)
 std::wstring GetShaderPath(const std::wstring& filename);
 
-// 將渲染所需的共享資源與狀態打包
+// レンダリングに必要な共有リソースと状態をパッケージ化
 struct RenderPassContext {
     GraphicsContext* gfx;
     Scene* scene;
@@ -15,12 +15,12 @@ struct RenderPassContext {
     ID3D12Resource* lightCB;
 
     DirectX::XMMATRIX view;
-	DirectX::XMMATRIX proj; // 帶有 Jitter，用於實際繪製與 Raytracing 發射光線
-	DirectX::XMMATRIX unjitteredProj; // 無 Jitter，用來計算精確的 Velocity
+	DirectX::XMMATRIX proj; // Jitter あり、実際の描画と Raytracing の光線発射に使用
+	DirectX::XMMATRIX unjitteredProj; // Jitter なし、正確な Velocity の計算に使用
     DirectX::XMVECTOR forward;
     DirectX::XMMATRIX prevView;
     DirectX::XMMATRIX prevProj;
-    DirectX::XMMATRIX prevUnjitteredProj; // 上一幀無 Jitter 的投影矩陣
+    DirectX::XMMATRIX prevUnjitteredProj; // 前フレームの Jitter なし投影行列
 
     float jitterX = 0.0f;
     float jitterY = 0.0f;
@@ -29,23 +29,23 @@ struct RenderPassContext {
     int totalVerts = 0;
     int totalPolys = 0;
 
-    // // 目前累計的影格數
+    // // 現在累積されたフレーム数
     UINT frameCount = 0;
-    // --- 帶有雜訊的 Raw GI ---
+    // --- ノイズありの Raw GI ---
     ID3D12Resource* rawDiffuseGI = nullptr;
     ID3D12Resource* rawSpecularGI = nullptr;
-    // 存放全域相機 Constant Buffer 的 GPU 虛擬位址
+    // グローバルカメラ Constant Buffer の GPU 仮想アドレスを格納
     D3D12_GPU_VIRTUAL_ADDRESS passCameraCBAddress = 0;
 };
 
-// 抽象 Render Pass 介面
+// 抽象 Render Pass インターフェース
 class IRenderPass {
 public:
     virtual ~IRenderPass() = default;
 
-    // 初始化 PSO、Root Signature 等專屬資源
+    // PSO、Root Signature などの専用リソースを初期化
     virtual void Init(ID3D12Device* device) = 0;
 
-    // 執行繪製指令
+    // 描画命令を実行
     virtual void Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext& ctx) = 0;
 };

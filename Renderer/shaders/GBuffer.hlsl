@@ -30,12 +30,12 @@ struct VSOutput
 VSOutput VSMain(VSInput input)
 {
     VSOutput output;
-    // 實際的頂點位置使用有 Jitter 的矩陣
+    // 実際の頂点位置には Jitter ありの行列を使用
     float4 worldPos = mul(float4(input.pos, 1.0f), modelMatrix);
     output.worldPos = worldPos.xyz;
     output.pos = mul(worldPos, viewProj);
     
-    // 透過 Adjugate Matrix (伴隨矩陣) 動態推導法線的 Inverse 矩陣
+    // Adjugate Matrix (余因子行列) を使って法線の逆行列を動的に導出
     float3x3 m3x3 = (float3x3) modelMatrix;
     float3x3 adj = transpose(float3x3(
         cross(m3x3[1], m3x3[2]),
@@ -46,7 +46,7 @@ VSOutput VSMain(VSInput input)
     
     output.uv = input.uv;
     
-    // 記錄當前幀與上一幀的 Clip Space 位置 (供 Velocity 運算), 必須使用【無 Jitter】的矩陣
+    // 現在フレームと前フレームの Clip Space 位置を記録 (Velocity 計算用)、【Jitter なし】の行列を使用する必要がある
     output.clipPos = mul(worldPos, unjitteredViewProj);
     output.prevClipPos = mul(worldPos, prevUnjitteredViewProj);
     
@@ -71,21 +71,21 @@ PSOutput PSMain(VSOutput input)
     PSOutput output;
     
     float4 albedo = g_baseColorMap.Sample(g_sampler, input.uv);
-    clip(albedo.a - 0.5f); // 簡單的 Alpha Test
+    clip(albedo.a - 0.5f); // シンプルな Alpha Test
     
-    // 假設 MR 貼圖 G通道=Roughness, B通道=Metallic
+    // MR テクスチャは G チャンネル=Roughness、B チャンネル=Metallic と仮定
     float4 mr = g_mrMap.Sample(g_sampler, input.uv);
     
-    // 法線貼圖與動態切線空間 (TBN) 計算
+    // 法線マップと動的接線空間 (TBN) の計算
     float3 localNormalMap = g_normalMap.Sample(g_sampler, input.uv).xyz;
-    localNormalMap = localNormalMap * 2.0f - 1.0f; // 轉換到 [-1, 1]
-    
-    // 修正 glTF (OpenGL) 與 DX12 的 +Y 軸向差異
+    localNormalMap = localNormalMap * 2.0f - 1.0f; // [-1, 1] に変換
+
+    // glTF (OpenGL) と DX12 の +Y 軸の差異を修正
     localNormalMap.y = -localNormalMap.y;
 
     float3 worldNormal = normalize(input.normal);
     
-    // 使用 Pixel Shader 專屬的 ddx/ddy 計算切線空間
+    // Pixel Shader 専用の ddx/ddy を使って接線空間を計算
     float3 dp1 = ddx(input.worldPos);
     float3 dp2 = ddy(input.worldPos);
     float2 duv1 = ddx(input.uv);
@@ -94,7 +94,7 @@ PSOutput PSMain(VSOutput input)
     float det = duv1.x * duv2.y - duv1.y * duv2.x;
     float3 worldTangent;
     
-    // 【防呆機制】避免 UV 退化導致除以零 (NaN 爆炸)
+    // 【フェイルセーフ】UV の縮退によるゼロ除算 (NaN 爆発) を防ぐ
     if (abs(det) < 1e-6f)
     {
         float3 up = abs(worldNormal.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
@@ -106,14 +106,14 @@ PSOutput PSMain(VSOutput input)
         worldTangent = normalize((dp1 * duv2.y - dp2 * duv1.y) * r);
     }
 
-    // Gram-Schmidt 正交化，確保切線絕對垂直於法線
+    // Gram-Schmidt 正規直交化で接線が法線に完全に垂直であることを保証
     worldTangent = normalize(worldTangent - dot(worldTangent, worldNormal) * worldNormal);
     
-    // 根據 UV 面積正負號修正鏡像 UV 的副切線方向
+    // UV 面積の符号に基づいてミラー UV の従接線方向を修正
     float handedness = (det < 0.0f) ? -1.0f : 1.0f;
     float3 worldBitangent = cross(worldNormal, worldTangent) * handedness;
     
-    // 建立 TBN 矩陣並轉換法線
+    // TBN 行列を構築して法線を変換
     float3x3 tbn = float3x3(worldTangent, worldBitangent, worldNormal);
     float3 finalNormal = normalize(mul(localNormalMap, tbn));
     
@@ -121,11 +121,11 @@ PSOutput PSMain(VSOutput input)
     output.NormalRoughness = float4(finalNormal, mr.g);
     output.WorldPosMetallic = float4(input.worldPos, mr.b);
     
-    // 計算螢幕空間動態向量 (Velocity)
+    // スクリーン空間のモーションベクトル (Velocity) を計算
     float2 ndc = input.clipPos.xy / input.clipPos.w;
     float2 prevNdc = input.prevClipPos.xy / input.prevClipPos.w;
     
-    // NDC [-1, 1] 轉 UV [0, 1] 空間 (注意 Y 軸反轉)
+    // NDC [-1, 1] を UV [0, 1] 空間に変換 (Y 軸反転に注意)
     output.Velocity = (ndc - prevNdc) * float2(0.5f, -0.5f);
     
     return output;

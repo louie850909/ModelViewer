@@ -30,7 +30,7 @@ public:
     void SetCameraTransform(float px, float py, float pz, float pitch, float yaw) { m_scene.SetCameraTransform(px, py, pz, pitch, yaw); }
     void GetStats(int& vertices, int& polygons, int& drawCalls, float& frameTimeMs);
 
-    // Node API & Light API 委派給 Scene
+    // Node API & Light API を Scene に委任
     int GetTotalNodeCount() { return m_scene.GetTotalNodeCount(); }
     bool GetNodeInfo(int globalIndex, std::string& outName, int& outParentGlobal) { return m_scene.GetNodeInfo(globalIndex, outName, outParentGlobal); }
     bool GetNodeTransform(int globalIndex, float* outT, float* outR, float* outS) { return m_scene.GetNodeTransform(globalIndex, outT, outR, outS); }
@@ -52,13 +52,13 @@ private:
     DirectX::XMMATRIX m_prevProj = DirectX::XMMatrixIdentity();
     DirectX::XMMATRIX m_prevUnjitteredProj = DirectX::XMMatrixIdentity();
 
-    // 全域相機常數緩衝區結構
+    // グローバルカメラ定数バッファ構造体
     struct PassConstants {
         DirectX::XMFLOAT4X4 viewProj;
         DirectX::XMFLOAT4X4 unjitteredViewProj;
         DirectX::XMFLOAT4X4 prevUnjitteredViewProj;
-        float envIntegral;       // 環境光總能量
-        DirectX::XMFLOAT3 _pad;  // 補齊 16 bytes 對齊
+        float envIntegral;       // 環境光の総エネルギー
+        DirectX::XMFLOAT3 _pad;  // 16 bytes アライメントを補完
     };
     ComPtr<ID3D12Resource> m_passCameraCB;
     PassConstants* m_mappedPassCameraCB = nullptr;
@@ -84,10 +84,10 @@ private:
     ComPtr<ID3D12Resource> m_lightCB;
     LightBufferData* m_mappedLightCB = nullptr;
 
-	// 環境貼圖資源
+	// 環境マップリソース
     std::shared_ptr<HDRIResource> m_hdriResource;
 
-    // --- 管線模組化 ---
+    // --- パイプラインのモジュール化 ---
     std::unique_ptr<IRenderPass> m_geomPass;
     std::unique_ptr<IRenderPass> m_lightPass;
     std::unique_ptr<IRenderPass> m_transparentPass;

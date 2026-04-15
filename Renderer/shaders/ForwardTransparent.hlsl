@@ -8,7 +8,7 @@ cbuffer PassConstants : register(b0)
     matrix prevUnjitteredViewProj;
 };
 
-// 由於 LightDef.hlsli 已經佔用了 b1，我們把模型常數綁在 b2
+// LightDef.hlsli がすでに b1 を使用しているため、モデル定数を b2 にバインドする
 cbuffer ObjectConstants : register(b2)
 {
     matrix modelMatrix;

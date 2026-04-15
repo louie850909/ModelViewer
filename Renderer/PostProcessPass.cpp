@@ -2,7 +2,7 @@
 #include "PostProcessPass.h"
 
 void PostProcessPass::Init(ID3D12Device* device) {
-    // 建立 Descriptor Heap (1 SRV, 1 UAV)
+    // Descriptor Heap を作成 (1 SRV, 1 UAV)
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
     heapDesc.NumDescriptors = 2;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -27,7 +27,7 @@ void PostProcessPass::Init(ID3D12Device* device) {
     D3DX12SerializeVersionedRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &sigBlob, &errBlob);
     device->CreateRootSignature(0, sigBlob->GetBufferPointer(), sigBlob->GetBufferSize(), IID_PPV_ARGS(&m_rootSig));
 
-    // 使用現有的 Shader 讀取機制
+    // 既存の Shader 読み取り機構を使用
     ComPtr<ID3DBlob> csBlob;
     D3DReadFileToBlob(GetShaderPath(L"PostProcess_CAS.cso").c_str(), &csBlob);
 
@@ -50,19 +50,19 @@ void PostProcessPass::EnsureResources(ID3D12Device* device, int width, int heigh
 }
 
 void PostProcessPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassContext& ctx) {
-    ID3D12Resource* input = ctx.rawDiffuseGI; // 此處應為 SpatialPass 輸出的資源
+    ID3D12Resource* input = ctx.rawDiffuseGI; // ここは SpatialPass の出力リソースであるべき
     if (!input) return;
 
     EnsureResources(ctx.gfx->GetDevice(), ctx.gfx->GetWidth(), ctx.gfx->GetHeight());
 
-    // 狀態轉移
+    // 状態遷移
     D3D12_RESOURCE_BARRIER barriers[2] = {
         CD3DX12_RESOURCE_BARRIER::Transition(input, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
         CD3DX12_RESOURCE_BARRIER::Transition(m_uavOutput.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
     };
     cmdList->ResourceBarrier(2, barriers);
 
-    // 綁定資源
+    // リソースをバインド
     UINT handleSize = ctx.gfx->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(m_srvUavHeap->GetCPUDescriptorHandleForHeapStart());
 
@@ -96,7 +96,7 @@ void PostProcessPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassCont
 
     cmdList->Dispatch((m_width + 7) / 8, (m_height + 7) / 8, 1);
 
-    // 最後：將結果複製到 BackBuffer
+    // 最後：結果を BackBuffer にコピー
     auto backBuffer = ctx.gfx->GetCurrentBackBuffer();
     D3D12_RESOURCE_BARRIER copyBarriers[2] = {
         CD3DX12_RESOURCE_BARRIER::Transition(m_uavOutput.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE),
@@ -105,7 +105,7 @@ void PostProcessPass::Execute(ID3D12GraphicsCommandList* cmdList, RenderPassCont
     cmdList->ResourceBarrier(2, copyBarriers);
     cmdList->CopyResource(backBuffer, m_uavOutput.Get());
 
-    // 轉回 RenderTarget 以利後續 UI 渲染
+    // 後続の UI レンダリングのために RenderTarget に戻す
     auto finalBarrier = CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
     cmdList->ResourceBarrier(1, &finalBarrier);
 }

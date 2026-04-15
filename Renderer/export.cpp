@@ -17,7 +17,7 @@ extern "C" {
     typedef void (*LoadCallback)(int meshId);
 
     // ---------------------------------------------------------------------------
-    // 生命週期
+    // ライフサイクル
     // ---------------------------------------------------------------------------
     __declspec(dllexport) bool Renderer_Init(IUnknown* panelUnknown, int width, int height) {
         if (!g_renderer.Init(panelUnknown, width, height)) return false;
@@ -44,7 +44,7 @@ extern "C" {
     }
 
     // ---------------------------------------------------------------------------
-    // 模型載入 / 移除
+    // モデルの読み込み / 削除
     // ---------------------------------------------------------------------------
     __declspec(dllexport) int Renderer_AddModel(const char* path, LoadCallback callback) {
         std::string filePath(path);
@@ -76,14 +76,14 @@ extern "C" {
     }
 
     // ---------------------------------------------------------------------------
-    // 相機
+    // カメラ
     // ---------------------------------------------------------------------------
     __declspec(dllexport) void Renderer_SetCameraTransform(float px, float py, float pz, float pitch, float yaw) {
         g_renderer.SetCameraTransform(px, py, pz, pitch, yaw);
     }
 
     // ---------------------------------------------------------------------------
-    // 統計
+    // 統計情報
     // ---------------------------------------------------------------------------
     __declspec(dllexport) void Renderer_GetStats(int* vertices, int* polygons, int* drawCalls, float* frameTimeMs) {
         if (vertices && polygons && drawCalls && frameTimeMs)
@@ -111,7 +111,7 @@ extern "C" {
             if (outName && maxLen > 0) strncpy_s(outName, maxLen, name.c_str(), _TRUNCATE);
             if (outParentGlobalIndex) *outParentGlobalIndex = parentGlobal;
     } else {
-        // 查無定節點時，諾輸出空字串供 C# CountNodesForMesh 判斷邊界
+        // ノードが見つからない場合、C# の CountNodesForMesh が境界を判定できるよう空文字列を出力
             if (outName && maxLen > 0) outName[0] = '\0';
             if (outParentGlobalIndex) *outParentGlobalIndex = -1;
         }
@@ -133,7 +133,7 @@ extern "C" {
 
     __declspec(dllexport) void Renderer_SetAllNodeTransforms(const float* data, int nodeCount) {
         std::lock_guard<std::mutex> lock(g_renderer.m_renderMutex);
-    // 每個 entry stride = 11：[globalIndex(float), tx,ty,tz, rx,ry,rz,rw, sx,sy,sz]
+    // 各 entry の stride = 11：[globalIndex(float), tx,ty,tz, rx,ry,rz,rw, sx,sy,sz]
         for (int i = 0; i < nodeCount; i++) {
             const float* p = data + i * 11;
             int gIdx = (int)p[0];
@@ -141,7 +141,7 @@ extern "C" {
         }
     }
 
-	// Ray Tracing 開關
+	// Ray Tracing の有効/無効切り替え
     __declspec(dllexport) void Renderer_SetRayTracingEnabled(bool enable) {
         g_renderer.SetRayTracingEnabled(enable);
     }
@@ -221,7 +221,7 @@ extern "C" {
     }
 
 	// ---------------------------------------------------------------------------
-	// 環境貼圖
+	// 環境マップ
 	// ---------------------------------------------------------------------------
     __declspec(dllexport) void Renderer_LoadEnvironmentMap(const wchar_t* path) {
         std::wstring filePath(path);

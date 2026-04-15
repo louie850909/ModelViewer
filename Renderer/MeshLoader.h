@@ -4,7 +4,7 @@
 
 class MeshLoader {
 public:
-    // 依副檔名自動選擇載入方式
+    // 拡張子に基づいてロード方法を自動選択
     static std::shared_ptr<Mesh> Load(const std::string& path);
 
 private:

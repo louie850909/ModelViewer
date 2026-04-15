@@ -5,7 +5,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-// tinygltf 用到 stb，stb 用了 sprintf，需要壓制 MSVC 的安全警告
+// tinygltf は stb を使用し、stb は sprintf を使用するため、MSVC のセキュリティ警告を抑制する必要がある
 #pragma warning(push)
 #pragma warning(disable: 4996)
 #define TINYGLTF_IMPLEMENTATION
@@ -17,7 +17,7 @@
 #include <filesystem>
 
 namespace {
-    // 遞迴解析 Assimp 節點
+    // Assimp ノードを再帰的に解析
     void ParseAssimpNode(aiNode* node, int parentIndex, std::vector<SceneNode>& outNodes) {
         int currentIndex = (int)outNodes.size();
         SceneNode sn;
@@ -25,7 +25,7 @@ namespace {
         if (sn.name.empty()) sn.name = "Unnamed_Node";
         sn.parentIndex = parentIndex;
 
-        // 分解 Assimp 轉換矩陣
+        // Assimp の変換行列を分解
         aiVector3D scaling, position;
         aiQuaternion rotation;
         node->mTransformation.Decompose(scaling, rotation, position);
@@ -34,7 +34,7 @@ namespace {
         sn.r[0] = rotation.x; sn.r[1] = rotation.y; sn.r[2] = rotation.z; sn.r[3] = rotation.w;
         sn.s[0] = scaling.x; sn.s[1] = scaling.y; sn.s[2] = scaling.z;
 
-        // 把 Assimp 節點擁有的 Mesh Index 記錄下來
+        // Assimp ノードが持つ Mesh Index を記録
         for (unsigned int i = 0; i < node->mNumMeshes; i++) {
             sn.subMeshIndices.push_back(node->mMeshes[i]);
         }
@@ -46,7 +46,7 @@ namespace {
         }
     }
 
-    // 遞迴解析 glTF 節點
+    // glTF ノードを再帰的に解析
     void ParseGltfNode(const tinygltf::Model& model, int nodeIndex, int parentIndex, std::vector<SceneNode>& outNodes, const std::vector<std::vector<int>>& gltfMeshToSubMeshes) {
         int currentIndex = (int)outNodes.size();
         SceneNode sn;
@@ -55,7 +55,7 @@ namespace {
         if (sn.name.empty()) sn.name = "Node_" + std::to_string(nodeIndex);
         sn.parentIndex = parentIndex;
 
-        // glTF 可能使用 TRS 陣列 (主動 cast 以迴避編譯警告)
+        // glTF は TRS 配列を使用する可能性がある (コンパイル警告を回避するため積極的にキャスト)
         if (gltfNode.translation.size() == 3) {
             sn.t[0] = static_cast<float>(gltfNode.translation[0]);
             sn.t[1] = static_cast<float>(gltfNode.translation[1]);
@@ -73,7 +73,7 @@ namespace {
             sn.s[2] = static_cast<float>(gltfNode.scale[2]);
         }
 
-        // 如果這個節點有綁定模型，就把對應的 SubMesh 加進來
+        // このノードにモデルがバインドされている場合、対応する SubMesh を追加
         if (gltfNode.mesh >= 0 && gltfNode.mesh < (int)gltfMeshToSubMeshes.size()) {
             for (int subIdx : gltfMeshToSubMeshes[gltfNode.mesh]) {
                 sn.subMeshIndices.push_back(subIdx);
@@ -90,13 +90,13 @@ namespace {
 
 std::shared_ptr<Mesh> MeshLoader::Load(const std::string& path) {
     std::string ext = std::filesystem::path(path).extension().string();
-    // 統一小寫比較
+    // 小文字に統一して比較
     for (auto& c : ext) c = (char)tolower(c);
 
     if (ext == ".gltf" || ext == ".glb")
         return LoadGltf(path);
     else
-        return LoadViaAssimp(path); // .fbx, .obj, .vrm (vrm = glb 實際上)
+        return LoadViaAssimp(path); // .fbx, .obj, .vrm (vrm は実際には glb)
 }
 
 std::shared_ptr<Mesh> MeshLoader::LoadViaAssimp(const std::string& path) {
@@ -112,11 +112,11 @@ std::shared_ptr<Mesh> MeshLoader::LoadViaAssimp(const std::string& path) {
     auto mesh = std::make_shared<Mesh>();
     std::string baseDir = std::filesystem::path(path).parent_path().string() + "/";
 
-    // 遍歷 Assimp 的材質陣列
+    // Assimp の材質配列を走査
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
         aiMaterial* mat = scene->mMaterials[i];
         aiString texPath;
-        // 嘗試取得 Diffuse (BaseColor) 貼圖
+        // Diffuse (BaseColor) テクスチャの取得を試みる
         if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
             mesh->texturePaths.push_back(baseDir + texPath.C_Str());
         }
@@ -130,18 +130,18 @@ std::shared_ptr<Mesh> MeshLoader::LoadViaAssimp(const std::string& path) {
         SubMesh sub;
         sub.indexOffset = (UINT)mesh->indices.size();
         sub.indexCount = aiM->mNumFaces * 3;
-        // 記錄這個 aiMesh 使用哪個材質
+        // この aiMesh が使用する材質を記録
         sub.materialIndex = aiM->mMaterialIndex;
 
-        // --------- Assimp 的半透明判斷邏輯 ---------
+        // --------- Assimp の半透明判定ロジック ---------
         if (aiM->mMaterialIndex >= 0) {
             aiMaterial* mat = scene->mMaterials[aiM->mMaterialIndex];
 
-            // 條件 1：檢查整體的「不透明度 (Opacity)」數值 (1.0 = 完全不透明)
+            // 条件 1：全体の「不透明度 (Opacity)」値を確認 (1.0 = 完全不透明)
             float opacity = 1.0f;
             mat->Get(AI_MATKEY_OPACITY, opacity);
 
-            // 條件 2：檢查是否有綁定「透明度貼圖 (Opacity Map)」
+            // 条件 2：「透明度テクスチャ (Opacity Map)」がバインドされているか確認
             bool hasOpacityTexture = (mat->GetTextureCount(aiTextureType_OPACITY) > 0);
 
             sub.isTransparent = (opacity < 1.0f) || hasOpacityTexture;
@@ -151,7 +151,7 @@ std::shared_ptr<Mesh> MeshLoader::LoadViaAssimp(const std::string& path) {
         }
         // --------------------------------------------------
 
-        // 紀錄這個 aiMesh 在全局頂點陣列中的起始位置
+        // この aiMesh のグローバル頂点配列内での開始位置を記録
         UINT vertexOffset = (UINT)mesh->vertices.size();
 
         for (unsigned int i = 0; i < aiM->mNumVertices; i++) {
@@ -167,7 +167,7 @@ std::shared_ptr<Mesh> MeshLoader::LoadViaAssimp(const std::string& path) {
         }
 
         for (unsigned int i = 0; i < aiM->mNumFaces; i++) {
-            // 寫入 Index 時，必須加上 vertexOffset！
+            // Index を書き込む際は vertexOffset を加算する必要がある！
             mesh->indices.push_back(aiM->mFaces[i].mIndices[0] + vertexOffset);
             mesh->indices.push_back(aiM->mFaces[i].mIndices[1] + vertexOffset);
             mesh->indices.push_back(aiM->mFaces[i].mIndices[2] + vertexOffset);
@@ -191,16 +191,16 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
 
     auto mesh = std::make_shared<Mesh>();
 
-    // 取得模型所在的資料夾路徑 (用來組合貼圖絕對路徑)
+    // モデルが存在するフォルダパスを取得 (テクスチャの絶対パスを組み合わせるため)
     std::string baseDir = std::filesystem::path(path).parent_path().string() + "/";
 
-    // 遍歷 glTF 的材質陣列
+    // glTF の材質配列を走査
     for (const auto& mat : model.materials) {
         std::string texPath = "";
         std::string mrPath = "";
         std::string normalPath = "";
 
-        // 檢查是否有 BaseColor 貼圖
+        // BaseColor テクスチャがあるか確認
         if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
             int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
             int imgIdx = model.textures[texIdx].source;
@@ -219,33 +219,33 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
             normalPath = baseDir + model.images[imgIdx].uri;
         }
 
-        mesh->texturePaths.push_back(texPath); // 就算沒有貼圖也塞入空字串佔位
+        mesh->texturePaths.push_back(texPath); // テクスチャがなくても空文字列でプレースホルダーを追加
         mesh->metallicRoughnessPaths.push_back(mrPath);
         mesh->normalPaths.push_back(normalPath);
     }
 
-    // 在迴圈外定義一個輔助函式，用來安全取得 Byte Stride
+    // ループ外でヘルパー関数を定義し、Byte Stride を安全に取得
     auto GetStride = [](const tinygltf::Accessor& acc, const tinygltf::BufferView& view) -> size_t {
         if (view.byteStride != 0) return view.byteStride;
         return tinygltf::GetComponentSizeInBytes(acc.componentType) * tinygltf::GetNumComponentsInType(acc.type);
         };
 
-    // [修正] 移除錯誤的外層 for (auto& gMesh) 迴圈，改為直接用索引 m 遍歷
+    // [修正] 誤った外側の for (auto& gMesh) ループを削除し、インデックス m で直接走査するよう変更
     std::vector<std::vector<int>> gltfMeshToSubMeshes(model.meshes.size());
     int currentSubMeshIdx = 0;
     for (size_t m = 0; m < model.meshes.size(); ++m) {
         for (const auto& prim : model.meshes[m].primitives) {
 
-            // 記錄這個子網格在「全局 Vertex Buffer」中的起始位置
+            // このサブメッシュの「グローバル Vertex Buffer」内での開始位置を記録
             UINT vertexOffset = (UINT)mesh->vertices.size();
 
-            // 取得 Position 資源
+            // Position リソースを取得
             auto& posAcc = model.accessors[prim.attributes.at("POSITION")];
             auto& posView = model.bufferViews[posAcc.bufferView];
             size_t posStride = GetStride(posAcc, posView);
             const uint8_t* posBase = model.buffers[posView.buffer].data.data() + posView.byteOffset + posAcc.byteOffset;
 
-            // 取得 Normal 資源 (如果有)
+            // Normal リソースを取得 (存在する場合)
             const uint8_t* nrmBase = nullptr;
             size_t nrmStride = 0;
             if (prim.attributes.count("NORMAL")) {
@@ -255,7 +255,7 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
                 nrmBase = model.buffers[nrmView.buffer].data.data() + nrmView.byteOffset + nrmAcc.byteOffset;
             }
 
-            // 取得 UV 資源 (如果有)
+            // UV リソースを取得 (存在する場合)
             const uint8_t* uvBase = nullptr;
             size_t uvStride = 0;
             if (prim.attributes.count("TEXCOORD_0")) {
@@ -265,7 +265,7 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
                 uvBase = model.buffers[uvView.buffer].data.data() + uvView.byteOffset + uvAcc.byteOffset;
             }
 
-            // 使用 Pointer Math 加上 Stride 來精準跳躍記憶體
+            // Stride を加算した Pointer Math を使用してメモリを正確にジャンプ
             for (size_t i = 0; i < posAcc.count; i++) {
                 Vertex v;
                 const float* p = (const float*)(posBase + i * posStride);
@@ -289,19 +289,19 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
                 mesh->vertices.push_back(v);
             }
 
-            // 處理 Indices 時，確保每個 Index 都加上 vertexOffset
+            // Indices を処理する際、各 Index に vertexOffset を加算することを確認
             SubMesh sub;
-            sub.indexOffset = (UINT)mesh->indices.size(); // 記錄這個子網格的起始 Index
+            sub.indexOffset = (UINT)mesh->indices.size(); // このサブメッシュの開始 Index を記録
 
-            // 記錄這個子網格使用哪個材質
+            // このサブメッシュが使用する材質を記録
             sub.materialIndex = prim.material;
             if (prim.material >= 0 && prim.material < (int)model.materials.size()) {
                 const auto& mat = model.materials[prim.material];
 
-                // 判斷是否為樹葉類 (Mask)
+                // 葉類 (Mask) かどうかを判定
                 sub.isAlphaTested = (mat.alphaMode == "MASK");
 
-                // 判斷 KHR_materials_transmission
+                // KHR_materials_transmission を判定
                 float transmission = 0.0f;
                 auto it = mat.extensions.find("KHR_materials_transmission");
                 if (it != mat.extensions.end()) {
@@ -312,10 +312,10 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
                     }
                 }
                 sub.transmissionFactor = transmission;
-                // 判斷是否為玻璃/半透明 (Blend 或 穿透)
+                // ガラス/半透明 (Blend または透過) かどうかを判定
                 sub.isTransparent = (mat.alphaMode == "BLEND") || (transmission > 0.0f);
 
-                // 解析 KHR_materials_ior
+                // KHR_materials_ior を解析
                 auto iorIt = mat.extensions.find("KHR_materials_ior");
                 if (iorIt != mat.extensions.end()) {
                     auto& iorVal = iorIt->second;
@@ -324,7 +324,7 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
                     }
                 }
 
-                // 解析 baseColorFactor
+                // baseColorFactor を解析
                 const auto& bcf = mat.pbrMetallicRoughness.baseColorFactor;
                 if (bcf.size() == 4) {
                     sub.baseColorFactor[0] = static_cast<float>(bcf[0]);
@@ -347,16 +347,16 @@ std::shared_ptr<Mesh> MeshLoader::LoadGltf(const std::string& path) {
             for (size_t i = 0; i < idxAcc.count; i++) {
                 if (idxAcc.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
                     const uint16_t* buf = (const uint16_t*)idxRaw;
-                    mesh->indices.push_back(buf[i] + vertexOffset); // 補上偏移
+                    mesh->indices.push_back(buf[i] + vertexOffset); // オフセットを加算
                 }
                 else if (idxAcc.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
                     const uint32_t* buf = (const uint32_t*)idxRaw;
-                    mesh->indices.push_back(buf[i] + vertexOffset); // 補上偏移
+                    mesh->indices.push_back(buf[i] + vertexOffset); // オフセットを加算
                 }
             }
             mesh->subMeshes.push_back(sub);
 
-            // 記錄這個 glTF Mesh 產生了哪幾個 SubMesh
+            // この glTF Mesh が生成した SubMesh を記録
             gltfMeshToSubMeshes[m].push_back(currentSubMeshIdx++);
         }
     }

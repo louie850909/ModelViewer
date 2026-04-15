@@ -5,8 +5,8 @@ void ForwardTransparentPass::Init(ID3D12Device* device) {
     CD3DX12_DESCRIPTOR_RANGE1 fwdSrvRange;
     fwdSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
     CD3DX12_ROOT_PARAMETER1 fwdParams[4];
-    fwdParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: 相機
-    fwdParams[1].InitAsConstants(16, 2, 0, D3D12_SHADER_VISIBILITY_VERTEX);                                       // b2: Model Matrix (避開 b1 燈光)
+    fwdParams[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // b0: カメラ
+    fwdParams[1].InitAsConstants(16, 2, 0, D3D12_SHADER_VISIBILITY_VERTEX);                                       // b2: Model Matrix (b1 ライトを回避)
     fwdParams[2].InitAsDescriptorTable(1, &fwdSrvRange, D3D12_SHADER_VISIBILITY_PIXEL);                           // t0: Textures
     fwdParams[3].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);  // b1: LightCB
 

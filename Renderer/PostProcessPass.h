@@ -15,7 +15,7 @@ private:
     ComPtr<ID3D12PipelineState> m_pso;
     ComPtr<ID3D12DescriptorHeap> m_srvUavHeap;
 
-    // 因為 BackBuffer 不支援 UAV，我們需要一個中繼資源
+    // BackBuffer は UAV をサポートしないため、中継リソースが必要
     ComPtr<ID3D12Resource> m_uavOutput;
 
     float m_sharpness = 0.5f;

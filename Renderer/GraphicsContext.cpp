@@ -49,7 +49,7 @@ void GraphicsContext::Resize(int width, int height, float scale) {
     m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
     m_width = width; m_height = height;
 
-    // 視窗大小改變並重新建立 Buffer 後，重置所有狀態追蹤為 PRESENT
+    // ウィンドウサイズ変更後にバッファを再作成した後、すべての状態追跡を PRESENT にリセット
     for (UINT i = 0; i < FRAME_COUNT; i++) {
         m_backBufferStates[i] = D3D12_RESOURCE_STATE_PRESENT;
     }
@@ -63,7 +63,7 @@ void GraphicsContext::ResetCommandList() {
     alloc->Reset();
     m_cmdList->Reset(alloc.Get(), nullptr);
 
-    // 只有在狀態為 PRESENT 時，才執行轉換
+    // 状態が PRESENT の場合のみ遷移を実行
     if (m_backBufferStates[m_frameIndex] == D3D12_RESOURCE_STATE_PRESENT) {
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
             m_renderTargets[m_frameIndex].Get(),
@@ -83,7 +83,7 @@ void GraphicsContext::SetRenderTargetsAndClear(const float clearColor[4]) {
 }
 
 void GraphicsContext::ExecuteCommandListAndPresent() {
-    // 只有在狀態為 RENDER_TARGET 時，才轉回 PRESENT
+    // 状態が RENDER_TARGET の場合のみ PRESENT に戻す
     if (m_backBufferStates[m_frameIndex] == D3D12_RESOURCE_STATE_RENDER_TARGET) {
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
             m_renderTargets[m_frameIndex].Get(),
@@ -107,7 +107,7 @@ void GraphicsContext::ExecuteCommandListAndPresent() {
     }
 }
 
-// === 下列為原本 Renderer 的私有硬體建立方法，原封不動搬過來 ===
+// === 以下は元々 Renderer のプライベートハードウェア作成メソッドであり、そのまま移植 ===
 void GraphicsContext::CreateDeviceAndQueue() {
 #ifdef _DEBUG
     ComPtr<ID3D12Debug> debug;
@@ -117,7 +117,7 @@ void GraphicsContext::CreateDeviceAndQueue() {
     CHECK(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)));
     CHECK(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&m_device)));
 
-    // --- 查詢 ID3D12Device5 與 DXR 支援度 ---
+    // --- ID3D12Device5 と DXR サポートを照会 ---
     if (SUCCEEDED(m_device.As(&m_device5))) {
         D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
         if (SUCCEEDED(m_device5->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5)))) {
